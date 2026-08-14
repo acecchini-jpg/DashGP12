@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.8</title>
+<title>Firewall Management V1.9</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -124,7 +124,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.8</small>
+    <small>MANAGEMENT · V1.9</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -218,7 +218,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
   <div class="grid c4" id="d1-kpis"></div>
   <div class="grid c2" style="margin-top:16px">
     <div class="card"><h3>% peças com defeito vs. Meta — ano selecionado</h3><div class="chart-box"><canvas id="d1-chart-meta"></canvas></div></div>
-    <div class="card"><h3>% rejeição diária — mês selecionado</h3><div class="chart-box"><canvas id="d1-chart-dia"></canvas></div></div>
+    <div class="card"><h3>% rejeição diária — mês selecionado</h3><div class="chart-box"><canvas id="d1-chart-dia"></canvas><p id="d1-dia-vazio" class="empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center">Selecione um mês para ver o detalhamento diário.</p></div></div>
   </div>
   <div class="grid c2">
     <div class="card"><h3>Pareto de Produtos</h3><div class="chart-box tall"><canvas id="d2-chart-prod"></canvas></div></div>
@@ -361,7 +361,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.8 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.9 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -873,7 +873,7 @@ async function initDash1() {
   const anos = await anosDisponiveis();
   const selAno = $('d1-ano');
   selAno.innerHTML = anos.length ? anos.map(a => `<option>${a}</option>`).join('') : '<option value="">—</option>';
-  $('d1-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  $('d1-mes').innerHTML = '<option value="">(Ano inteiro)</option>' + MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
   const hoje = new Date();
   if (anos.includes(hoje.getFullYear())) { selAno.value = hoje.getFullYear(); $('d1-mes').value = hoje.getMonth() + 1; }
   else if (anos.length) { selAno.value = anos[0]; $('d1-mes').value = 1; }
@@ -952,9 +952,9 @@ function filtrarPorDia(diaClicado) {
   renderDash1();
 }
 function renderChipsDash() {
-  /* Chip de Dia: inline no filtro, logo após Mês / antes de Produto */
+  /* Chip de Dia: inline no filtro, logo após Mês / antes de Produto — só faz sentido com um mês selecionado */
   const boxDia = $('d1-chip-dia');
-  if (filtroDia) {
+  if (filtroDia && $('d1-mes').value) {
     boxDia.style.display = 'block';
     boxDia.innerHTML = `<span class="filter-chip">Dia: ${String(filtroDia).padStart(2, '0')} <button type="button" aria-label="Remover filtro de dia">×</button></span>`;
     boxDia.querySelector('button').addEventListener('click', () => { filtroDia = null; renderDash1(); });
@@ -977,10 +977,12 @@ function limparGraficosDashboard() {
 }
 
 async function renderDash1() {
-  const ano = Number($('d1-ano').value), mes = Number($('d1-mes').value);
+  const ano = Number($('d1-ano').value);
+  const mesRaw = $('d1-mes').value;
+  const mes = mesRaw ? Number(mesRaw) : null;   // null = "(Ano inteiro)", sem mês específico selecionado
   const codigoSel = $('d1-codigo').value;
   const operadorSel = ($('d1-operador').value || '').trim().toLowerCase();
-  const modo = $('d1-modo').value; // 'pct' | 'qtd'
+  const modo = $('d1-modo').value; // 'pct' | 'qtd' | 'ocor'
   const topN = Number($('d1-topn').value);
   renderChipsDash();
   if (!ano) {
@@ -988,7 +990,7 @@ async function renderDash1() {
     limparGraficosDashboard();
     return;
   }
-  const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+  const anoMesSel = mes ? `${ano}${String(mes).padStart(2, '0')}` : null;
 
   const todasRows = await db.inspecoes.where('ano').equals(ano).toArray();
   const bate = r => {
@@ -998,13 +1000,15 @@ async function renderDash1() {
     return true;
   };
   const rowsAno = todasRows.filter(bate);
-  const rowsMesFull = rowsAno.filter(r => r.anoMes === anoMesSel);          // mês inteiro, ignora filtro de Dia — alimenta o gráfico Diário (o "seletor")
-  const effectiveRows = filtroDia ? rowsMesFull.filter(r => parseInt(r.data.slice(8, 10), 10) === filtroDia) : rowsMesFull;
-  const gMes = agrupa(effectiveRows);                                       // respeita o filtro de Dia — alimenta KPIs, Paretos, Turno e a Tabela
+  const rowsMesFull = mes ? rowsAno.filter(r => r.anoMes === anoMesSel) : [];   // mês inteiro (só existe quando um mês está selecionado) — alimenta o gráfico Diário
+  const diaAtivo = !!(mes && filtroDia);                                       // filtro de Dia só faz sentido com um mês selecionado
+  const effectiveRows = mes ? (diaAtivo ? rowsMesFull.filter(r => parseInt(r.data.slice(8, 10), 10) === filtroDia) : rowsMesFull) : rowsAno;
+  const gMes = agrupa(effectiveRows);                                       // respeita mês/dia — alimenta KPIs, Paretos, Turno e a Tabela
   const pctAtual = pct(gMes.def, gMes.insp);
   const ppm = gMes.insp > 0 ? gMes.def / gMes.insp * 1e6 : 0;
+  const periodoLabel = mes ? MESES[mes - 1] : `Ano ${ano} inteiro`;
   $('d1-kpis').innerHTML = `
-    <div class="kpi"><div class="lab">Inspecionadas (${MESES[mes - 1]}${filtroDia ? ', dia ' + String(filtroDia).padStart(2, '0') : ''})</div><div class="val">${fmtInt(gMes.insp)}</div></div>
+    <div class="kpi"><div class="lab">Inspecionadas (${periodoLabel}${diaAtivo ? ', dia ' + String(filtroDia).padStart(2, '0') : ''})</div><div class="val">${fmtInt(gMes.insp)}</div></div>
     <div class="kpi"><div class="lab">Defeitos</div><div class="val">${fmtInt(gMes.def)}</div></div>
     <div class="kpi"><div class="lab">% peças com defeito</div><div class="val ${pctAtual <= metaPct ? 'ok' : 'bad'}">${fmtPct(pctAtual)}</div></div>
     <div class="kpi"><div class="lab">PPM</div><div class="val">${fmtInt(Math.round(ppm))}</div></div>`;
@@ -1041,35 +1045,44 @@ async function renderDash1() {
   });
 
   /* Gráfico 2: diário do mês selecionado — SEMPRE o mês inteiro (é o "seletor" do filtro de Dia).
-     Sem dados = sem ponto, nunca 0%. Clique num dia filtra (toggle) o restante do dashboard. */
-  const nd = diasDoMes(ano, mes);
-  const gDiaFull = agrupa(rowsMesFull);
-  const diasArr = [];
-  for (let d = 1; d <= nd; d++) {
-    const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const o = gDiaFull.porDia.get(iso);
-    const val = o ? (modo === 'qtd' ? o.def : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp)) : null;
-    diasArr.push({ dia: d, insp: o ? o.insp : 0, def: o ? o.def : 0, ocorDef: o ? o.ocorDef : 0, val });
+     Sem dados = sem ponto, nunca 0%. Clique num dia filtra (toggle) o restante do dashboard.
+     Sem mês selecionado ("Ano inteiro"), não há como plotar por dia — mostra um aviso e não desenha. */
+  if (!mes) {
+    if (charts['d1-chart-dia']) { charts['d1-chart-dia'].destroy(); delete charts['d1-chart-dia']; }
+    $('d1-chart-dia').style.display = 'none';
+    $('d1-dia-vazio').style.display = 'flex';
+  } else {
+    $('d1-chart-dia').style.display = 'block';
+    $('d1-dia-vazio').style.display = 'none';
+    const nd = diasDoMes(ano, mes);
+    const gDiaFull = agrupa(rowsMesFull);
+    const diasArr = [];
+    for (let d = 1; d <= nd; d++) {
+      const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const o = gDiaFull.porDia.get(iso);
+      const val = o ? (modo === 'qtd' ? o.def : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp)) : null;
+      diasArr.push({ dia: d, insp: o ? o.insp : 0, def: o ? o.def : 0, ocorDef: o ? o.ocorDef : 0, val });
+    }
+    const labelDiario = modo === 'qtd' ? 'Defeitos por dia' : modo === 'ocor' ? 'Ocorrências por dia' : '% rejeição diária';
+    const corPonto = d => d === filtroDia ? '#D4A017' : '#3A6EF0';
+    const dsDiario = [
+      { label: labelDiario, data: diasArr.map(x => x.val), spanGaps: false,
+        borderColor: '#3A6EF0', backgroundColor: '#3A6EF0',
+        pointBackgroundColor: diasArr.map(x => corPonto(x.dia)), pointRadius: diasArr.map(x => x.dia === filtroDia ? 6 : 3), borderWidth: 2, tension: .2,
+        datalabels: { display: true, align: 'top', offset: 3, formatter: v => v == null ? '' : fmtModo(v), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
+    ];
+    if (modo === 'pct') dsDiario.push({ label: `Meta (${fmtPct(metaPct)})`, data: diasArr.map(() => metaPct),
+      borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, datalabels: { display: false } });
+    renderChart('d1-chart-dia', {
+      type: 'line',
+      data: { labels: diasArr.map(x => String(x.dia).padStart(2, '0')), datasets: dsDiario },
+      options: { responsive: true, maintainAspectRatio: false,
+        onClick: (evt, elements) => { if (!elements.length) return; filtrarPorDia(diasArr[elements[0].index].dia); },
+        onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (c.parsed.y == null ? 'Sem inspeção' : (modo === 'pct' ? fmtPct(c.parsed.y) : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s)' : ' defeito(s)')) + ` (${fmtInt(diasArr[c.dataIndex].def)}/${fmtInt(diasArr[c.dataIndex].insp)})`) } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
+    });
   }
-  const labelDiario = modo === 'qtd' ? 'Defeitos por dia' : modo === 'ocor' ? 'Ocorrências por dia' : '% rejeição diária';
-  const corPonto = d => d === filtroDia ? '#D4A017' : '#3A6EF0';
-  const dsDiario = [
-    { label: labelDiario, data: diasArr.map(x => x.val), spanGaps: false,
-      borderColor: '#3A6EF0', backgroundColor: '#3A6EF0',
-      pointBackgroundColor: diasArr.map(x => corPonto(x.dia)), pointRadius: diasArr.map(x => x.dia === filtroDia ? 6 : 3), borderWidth: 2, tension: .2,
-      datalabels: { display: true, align: 'top', offset: 3, formatter: v => v == null ? '' : fmtModo(v), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
-  ];
-  if (modo === 'pct') dsDiario.push({ label: `Meta (${fmtPct(metaPct)})`, data: diasArr.map(() => metaPct),
-    borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, datalabels: { display: false } });
-  renderChart('d1-chart-dia', {
-    type: 'line',
-    data: { labels: diasArr.map(x => String(x.dia).padStart(2, '0')), datasets: dsDiario },
-    options: { responsive: true, maintainAspectRatio: false,
-      onClick: (evt, elements) => { if (!elements.length) return; filtrarPorDia(diasArr[elements[0].index].dia); },
-      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (c.parsed.y == null ? 'Sem inspeção' : (modo === 'pct' ? fmtPct(c.parsed.y) : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s)' : ' defeito(s)')) + ` (${fmtInt(diasArr[c.dataIndex].def)}/${fmtInt(diasArr[c.dataIndex].insp)})`) } } },
-      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
-  });
 
   /* Pareto de Produtos, por Operador e de Defeitos — barras empilhadas por Turno (T1/T2/T3 + Outros),
      como no Scrap Manager. Em modo Ocorrências, cada barra conta REGISTROS de defeito (1 por linha),
@@ -1098,8 +1111,8 @@ async function renderDash1() {
     .filter(([t]) => !TURNOS_EXCLUIR_PARETO.has(String(t).trim().toLowerCase()))
     .sort((a, b) => { const ia = ordemT.indexOf(a[0]), ib = ordemT.indexOf(b[0]); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
   const corT = t => t.startsWith('1') ? '#4F7CFF' : t.startsWith('2') ? '#22C997' : t.startsWith('3') ? '#F5A623' : '#8A97A3';
-  const valorTurno = o => modo === 'qtd' ? o.insp : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp);
-  const labelTurno = modo === 'qtd' ? 'Peças inspecionadas' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
+  const valorTurno = o => modo === 'qtd' ? o.def : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp);
+  const labelTurno = modo === 'qtd' ? 'Peças com defeito' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
   renderChart('d2-chart-turno', {
     type: 'bar',
     data: {
@@ -1108,7 +1121,7 @@ async function renderDash1() {
         datalabels: { display: true, anchor: 'end', align: 'top', formatter: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v), color: '#1A1F2E', font: { size: 11, weight: 600 } } }]
     },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => modo === 'pct' ? fmtPct(c.parsed.y) + ` (${fmtInt(turnos[c.dataIndex][1].def)} def / ${fmtInt(turnos[c.dataIndex][1].insp)} insp)` : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s) de defeito' : ' peça(s) inspecionada(s)') } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => modo === 'pct' ? fmtPct(c.parsed.y) + ` (${fmtInt(turnos[c.dataIndex][1].def)} def / ${fmtInt(turnos[c.dataIndex][1].insp)} insp)` : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s) de defeito' : ' peça(s) com defeito') } } },
       scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
   });
 
