@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firewall Management V1.5</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F0F2F7; --surface:#FFFFFF; --ink:#1A1F2E; --muted:#7B849A;
+  --accent:#3A6EF0; --accent-2:#2A56D0; --line:#DDE1EB;
+  --ok:#18A87D; --warn:#D4A017; --danger:#E04040;
+  --t1:#4F7CFF; --t2:#22C997; --t3:#F5A623; --t0:#8A97A3;
+  --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+  --radius:8px; --shadow:0 1px 3px rgba(23,33,43,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px}
+/* ---------- Layout ---------- */
+#app{display:flex;min-height:100vh}
+aside{width:224px;background:var(--surface);border-right:1px solid var(--line);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}
+.brand{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
+.brand h1{font-size:15px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
+.brand small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.12em;margin-top:2px}
+.hazard{height:4px;background:repeating-linear-gradient(135deg,var(--accent) 0 10px,#F0B429 10px 20px);opacity:.85}
+nav{padding:10px 8px;flex:1;overflow:auto}
+.nav-sec{font-size:10.5px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:12px 10px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;cursor:pointer;padding:8px 10px;border-radius:6px;font-size:13.5px;color:var(--ink);font-family:var(--sans)}
+.nav-item:hover{background:#EEF2F5}
+.nav-item.active{background:#E4EDF4;color:var(--accent);font-weight:600}
+.nav-item .ico{width:18px;text-align:center;font-size:14px}
+.db-status{padding:10px 14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--muted)}
+main{margin-left:224px;flex:1;padding:22px 26px 60px;min-width:0}
+.page{display:none}
+.page.active{display:block}
+.page-head{margin-bottom:18px}
+.page-head h2{font-size:19px;font-weight:700}
+.page-head p{color:var(--muted);margin-top:3px;font-size:13px}
+/* ---------- Components ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)}
+.grid{display:grid;gap:16px}
+.grid.c2{grid-template-columns:1fr 1fr}
+.grid.c3{grid-template-columns:repeat(3,1fr)}
+.grid.c4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1100px){.grid.c4{grid-template-columns:1fr 1fr}.grid.c2,.grid.c3{grid-template-columns:1fr}}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-family:var(--sans);font-size:13.5px;background:#FCFDFE;color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--accent-2);outline-offset:-1px}
+input[type=number]{font-family:var(--mono)}
+.field{margin-bottom:12px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>.field{flex:1;min-width:140px;margin-bottom:0}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+.btn:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.btn.sec{background:var(--surface);color:var(--accent);border-color:var(--line)}
+.btn.sec:hover{background:#EEF2F5}
+.btn.danger{background:var(--danger);border-color:var(--danger)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--line);padding:7px 8px;background:#FAFBFC;position:sticky;top:0}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+tr:hover td{background:#F7FAFC}
+.tbl-wrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.chip{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600;color:#fff}
+.chip.t1{background:var(--t1)}.chip.t2{background:var(--t2)}.chip.t3{background:var(--t3)}.chip.t0{background:var(--t0)}
+.filter-chip{display:inline-flex;align-items:center;gap:8px;background:#E4EDF4;color:var(--accent);border:1px solid #C9DCF0;border-radius:99px;padding:5px 8px 5px 12px;font-size:12.5px;font-weight:600}
+.filter-chip button{border:0;background:rgba(58,110,240,.15);color:var(--accent);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;font-weight:700}
+.filter-chip button:hover{background:rgba(58,110,240,.3)}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.kpi .val{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:4px}
+.kpi .val.ok{color:var(--ok)}.kpi .val.bad{color:var(--danger)}
+.chart-box{position:relative;height:300px}
+.chart-box.tall{height:340px}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono)}
+.empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
+.defect-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:6px;background:#FAFBFC}
+.defect-item{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.defect-item span{flex:1;font-size:12.5px;line-height:1.25}
+.defect-item input{width:64px;text-align:right;padding:5px 6px}
+.defect-item.filled{border-color:var(--warn);background:#FFF9EF}
+/* toast */
+#toast{position:fixed;bottom:22px;right:22px;z-index:100;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--ink);color:#fff;padding:11px 16px;border-radius:6px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:380px;animation:tin .2s ease}
+.toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* modal */
+#modal-back{position:fixed;inset:0;background:rgba(23,33,43,.45);display:none;align-items:center;justify-content:center;z-index:90}
+#modal-back.open{display:flex}
+#modal{background:var(--surface);border-radius:10px;width:min(460px,92vw);max-height:86vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+#modal .m-head{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px}
+#modal .m-body{padding:16px 18px}
+#modal .m-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+.import-card{border:1px dashed var(--line);border-radius:8px;padding:16px;background:#FAFBFC}
+.import-card h4{font-size:13.5px;margin-bottom:4px;color:var(--accent)}
+.import-card p{font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.45}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.filters .field{margin:0;min-width:130px}
+.actions{white-space:nowrap}
+.pct-cell{font-weight:600}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+th.sortable:hover{color:var(--accent)}
+th.sortable .arrow{display:inline-block;margin-left:3px;opacity:.4;font-size:10px}
+th.sortable .arrow::after{content:'↕'}
+th.sortable.sort-asc .arrow::after{content:'▲'}
+th.sortable.sort-desc .arrow::after{content:'▼'}
+th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <div class="brand">
+    <h1>FIREWALL</h1>
+    <small>MANAGEMENT · V1.5</small>
+  </div>
+  <div class="hazard"></div>
+  <nav>
+    <div class="nav-sec">Análise</div>
+    <button class="nav-item active" data-page="dash-produto"><span class="ico">▤</span>Dashboard</button>
+    <button class="nav-item" data-page="comparacao"><span class="ico">⇄</span>Comparação Action Plan</button>
+    <div class="nav-sec">Operação</div>
+    <button class="nav-item" data-page="digitacao"><span class="ico">⌨</span>Digitação Rápida</button>
+    <button class="nav-item" data-page="importacao"><span class="ico">⇪</span>Importação</button>
+    <div class="nav-sec">Cadastros</div>
+    <button class="nav-item" data-page="cad-produtos"><span class="ico">◧</span>Produtos (Matriz N)</button>
+    <button class="nav-item" data-page="cad-operadores"><span class="ico">◉</span>Operadores</button>
+    <button class="nav-item" data-page="cad-defeitos"><span class="ico">✕</span>Defeitos</button>
+    <div class="nav-sec">Sistema</div>
+    <button class="nav-item" data-page="config"><span class="ico">⚙</span>Configurações</button>
+  </nav>
+  <div class="db-status" id="db-status">IndexedDB · —</div>
+</aside>
+
+<main>
+<!-- ================= DIGITAÇÃO RÁPIDA ================= -->
+<section class="page" id="page-digitacao">
+  <div class="page-head"><h2>Digitação Rápida</h2><p>Lançamento de inspeção no chão de fábrica. Cada lançamento grava 1 registro "Inspeção" (peças inspecionadas) + 1 registro por defeito encontrado, com o turno congelado no momento da gravação.</p></div>
+  <div class="card">
+    <div class="row" style="margin-bottom:14px">
+      <div class="field"><label>Data da inspeção</label><input type="date" id="dr-data"></div>
+      <div class="field" style="flex:2"><label>Produto (Código)</label><input type="text" id="dr-produto" list="dr-produto-list" class="mono" placeholder="Digite o código…" autocomplete="off"><datalist id="dr-produto-list"></datalist></div>
+      <div class="field" style="flex:2"><label>Operador (matrícula)</label><input type="text" id="dr-operador" list="dr-operador-list" class="mono" placeholder="Digite a matrícula…" autocomplete="off"><datalist id="dr-operador-list"></datalist></div>
+      <div class="field"><label>Inspetor GP-12 (matrícula)</label><input type="text" id="dr-inspetor" class="mono" placeholder="ex.: 144"></div>
+      <div class="field"><label>Qtd. Inspecionada</label><input type="number" id="dr-qtd" min="1" step="1" placeholder="0"></div>
+    </div>
+    <label style="margin-bottom:6px">Defeitos encontrados (informe a quantidade apenas nos defeitos ocorridos)</label>
+    <div class="defect-grid" id="dr-defeitos"></div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+      <button class="btn" id="dr-salvar">Salvar lançamento</button>
+      <button class="btn sec" id="dr-limpar">Limpar quantidades</button>
+      <span class="muted" id="dr-resumo"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Últimos lançamentos</h3>
+    <div class="tbl-wrap" style="max-height:280px"><table>
+      <thead><tr><th>Data</th><th>Código</th><th>Operador</th><th>Turno</th><th>Registro</th><th class="num">Qtd</th><th></th></tr></thead>
+      <tbody id="dr-recentes"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ================= IMPORTAÇÃO ================= -->
+<section class="page" id="page-importacao">
+  <div class="page-head"><h2>Importação de Planilhas</h2><p>Módulos independentes. Os registros de inspeção são importados integralmente, preservando todas as linhas — inclusive duplicadas — conforme recebidos (sem desduplicação).</p></div>
+  <div class="grid c3">
+    <div class="import-card">
+      <h4>1 · Cadastro de Operadores</h4>
+      <p>Lê a aba <b class="mono">De_Para</b> (Matrícula, Nome, Turno). Operadores já cadastrados são mantidos; apenas novos são adicionados. Também importa o De→Para de nomes de defeitos (normalização aplicada na visualização).</p>
+      <input type="file" id="imp-oper-file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+      <button class="btn sec" onclick="document.getElementById('imp-oper-file').click()">Selecionar arquivo</button>
+    </div>
+    <div class="import-card">
+      <h4>2 · Cadastro de Produtos</h4>
+      <p>Lê a aba <b class="mono">Tabela N</b> (Código, Descrição, Cliente, Cod Cliente, Status). Produtos existentes são mantidos; apenas novos códigos são adicionados.</p>
+      <input type="file" id="imp-prod-file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+      <button class="btn sec" onclick="document.getElementById('imp-prod-file').click()">Selecionar arquivo</button>
+    </div>
+    <div class="import-card">
+      <h4>3 · Dados de Inspeção</h4>
+      <p>Lê a aba <b class="mono">Dados</b> (colunas A–L). Após a leitura, o sistema pergunta <b>de qual ano</b> importar e limita a importação a esse ano. AnoMês/Semana são recalculados a partir da Data e o <b>Turno é recalculado pelo cadastro de operadores</b>.</p>
+      <input type="file" id="imp-dados-file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+      <button class="btn" onclick="document.getElementById('imp-dados-file').click()">Selecionar arquivo</button>
+    </div>
+  </div>
+  <div class="card" id="imp-log-card" style="display:none"><h3>Log da importação</h3><div id="imp-log" class="mono" style="font-size:12px;white-space:pre-wrap;line-height:1.6"></div></div>
+</section>
+
+<!-- ================= DASHBOARD ================= -->
+<section class="page active" id="page-dash-produto">
+  <div class="page-head"><h2>Dashboard</h2><p>Análise por produto e operador: evolução anual vs. meta, rejeição diária, paretos e performance por Operador/Turno (Taxa de Aderência = defeitos ÷ peças inspecionadas).</p></div>
+  <div class="filters">
+    <div class="field"><label>Ano</label><select id="d1-ano"></select></div>
+    <div class="field"><label>Mês</label><select id="d1-mes"></select></div>
+    <div id="d1-chip-dia" style="display:none;align-self:flex-end;padding-bottom:9px"></div>
+    <div class="field" style="min-width:230px"><label>Produto</label><select id="d1-codigo"></select></div>
+    <div class="field" style="min-width:190px"><label>Buscar código / descrição</label><input type="text" id="d1-busca-codigo" placeholder="Filtra a lista acima…"></div>
+    <div class="field" style="min-width:140px"><label>Operador (matrícula)</label><input type="text" id="d1-operador" class="mono" placeholder="Todos"></div>
+    <div class="field" style="min-width:130px"><label>Modo dos gráficos</label><select id="d1-modo"><option value="pct" selected>Percentual</option><option value="qtd">Quantidade</option></select></div>
+    <div class="field" style="min-width:110px"><label>Exibir top</label><select id="d1-topn"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="0">Todos</option></select></div>
+    <button class="btn" id="d1-aplicar">Aplicar</button>
+    <button class="btn sec" id="d1-limpar">Limpar Filtro</button>
+  </div>
+  <div id="d1-chips" style="display:none;margin:-8px 0 14px"></div>
+  <div class="grid c4" id="d1-kpis"></div>
+  <div class="grid c2" style="margin-top:16px">
+    <div class="card"><h3>% peças com defeito vs. Meta — ano selecionado</h3><div class="chart-box"><canvas id="d1-chart-meta"></canvas></div></div>
+    <div class="card"><h3>% rejeição diária — mês selecionado</h3><div class="chart-box"><canvas id="d1-chart-dia"></canvas></div></div>
+  </div>
+  <div class="grid c2">
+    <div class="card"><h3>Pareto de Produtos</h3><div class="chart-box tall"><canvas id="d2-chart-prod"></canvas></div></div>
+    <div class="card"><h3>Pareto de defeitos</h3><div class="chart-box tall"><canvas id="d1-chart-pareto"></canvas></div></div>
+  </div>
+  <div class="grid c2">
+    <div class="card"><h3>Pareto por Operador</h3><div class="chart-box tall"><canvas id="d2-chart-oper"></canvas></div></div>
+    <div class="card"><h3>Por Turno</h3><div class="chart-box tall"><canvas id="d2-chart-turno"></canvas></div></div>
+  </div>
+  <div class="card">
+    <h3>Performance por Operador / Turno</h3>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th class="sortable" data-sort="mat">Matrícula<span class="arrow"></span></th>
+        <th class="sortable" data-sort="nome">Operador<span class="arrow"></span></th>
+        <th class="sortable" data-sort="turno">Turno<span class="arrow"></span></th>
+        <th class="sortable num" data-sort="insp">Inspecionadas<span class="arrow"></span></th>
+        <th class="sortable num" data-sort="def">Defeitos<span class="arrow"></span></th>
+        <th class="sortable num" data-sort="taxa">Taxa de Aderência<span class="arrow"></span></th>
+      </tr></thead>
+      <tbody id="d2-tbl-oper"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ================= COMPARAÇÃO ACTION PLAN ================= -->
+<section class="page" id="page-comparacao">
+  <div class="page-head"><h2>Comparação com Action Plan</h2><p>Cruza os dados de inspeção do Firewall (GP-12) com o Plano "GP12" do Action Plan. Como a data de inspeção (Firewall) e a data de produção (Action Plan) não coincidem, a correspondência usa uma janela de dias configurável.</p></div>
+
+  <div class="card" id="ap-login-card">
+    <h3>Conectar ao Action Plan</h3>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Use o mesmo e-mail e senha do Action Plan. A conexão é feita direto com o Firebase do Action Plan — nenhuma regra de segurança precisa ser alterada.</p>
+    <div class="row" style="max-width:520px;align-items:flex-end">
+      <div class="field"><label>E-mail</label><input type="text" id="ap-email" autocomplete="username"></div>
+      <div class="field"><label>Senha</label><input type="password" id="ap-senha" autocomplete="current-password"></div>
+      <button class="btn" id="ap-conectar">Conectar</button>
+    </div>
+    <p id="ap-login-status" class="muted" style="margin-top:10px;font-size:12.5px"></p>
+  </div>
+
+  <div id="ap-painel" style="display:none">
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span class="muted" style="font-size:12.5px" id="ap-conectado-como"></span>
+      <button class="btn sm sec" id="ap-desconectar">Desconectar</button>
+    </div>
+
+    <div class="filters">
+      <div class="field"><label>Ano</label><select id="ap-ano"></select></div>
+      <div class="field"><label>Mês</label><select id="ap-mes"></select></div>
+      <div class="field" style="min-width:110px"><label>Top N</label><select id="ap-topn"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="0">Todos</option></select></div>
+      <div class="field" style="min-width:150px"><label>Janela de correspondência</label><select id="ap-janela"><option value="3">± 3 dias</option><option value="7" selected>± 7 dias</option><option value="15">± 15 dias</option><option value="30">± 30 dias</option></select></div>
+      <div class="field" style="min-width:170px"><label>Direção 2 — ranquear por</label><select id="ap-criterio"><option value="ocorrencias" selected>Ocorrências</option><option value="quantidade">Quantidade</option></select></div>
+      <button class="btn" id="ap-atualizar">Atualizar</button>
+    </div>
+
+    <div class="card">
+      <h3>Direção 1 — Top produtos do Firewall → existe no Action Plan?</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os produtos com mais defeitos no Firewall no período e verifica se há problema/ação registrada no Action Plan (Plano GP12) para o mesmo código, dentro da janela de dias.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Código</th><th>Descrição</th><th class="num">Defeitos (Firewall)</th><th>Sub-Tópico Action Plan</th><th class="num">Ocorrências no AP (na janela)</th><th class="num">Recorrências</th><th>Situação</th></tr></thead>
+        <tbody id="ap-tbl-d1"></tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>Direção 2 — Top itens do Action Plan → foram apontados no Firewall?</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os itens (Sub-Tópicos do Plano GP12) com mais ações no período (por ocorrências ou quantidade) e verifica se o Firewall realmente apontou defeito para aquele código, dentro da janela de dias.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Sub-Tópico Action Plan</th><th>Código(s)</th><th class="num">Ocorrências</th><th class="num">Quantidade</th><th>Situação</th><th class="num">Defeitos correspondentes (Firewall)</th></tr></thead>
+        <tbody id="ap-tbl-d2"></tbody>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CADASTROS ================= -->
+<section class="page" id="page-cad-produtos">
+  <div class="page-head"><h2>Cadastro de Produtos (Matriz N)</h2><p>Produtos monitorados pelo Firewall.</p></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;margin-bottom:12px"><input type="text" id="cp-busca" placeholder="Buscar por código, descrição ou cliente…" style="max-width:320px"><button class="btn" id="cp-novo">+ Novo produto</button></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Código</th><th>Descrição</th><th>Cliente</th><th>Cod Cliente</th><th>Status</th><th></th></tr></thead>
+      <tbody id="cp-tbody"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="page" id="page-cad-operadores">
+  <div class="page-head"><h2>Cadastro de Operadores</h2><p>Matrícula → Nome → Turno. Fonte do turno congelado na Digitação Rápida e na Importação.</p></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;margin-bottom:12px"><input type="text" id="co-busca" placeholder="Buscar por matrícula ou nome…" style="max-width:320px"><button class="btn" id="co-novo">+ Novo operador</button></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Matrícula</th><th>Nome</th><th>Turno</th><th></th></tr></thead>
+      <tbody id="co-tbody"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="page" id="page-cad-defeitos">
+  <div class="page-head"><h2>Cadastro de Defeitos</h2><p>Catálogo exibido na Digitação Rápida e nos Paretos.</p></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;margin-bottom:12px"><input type="text" id="cd-busca" placeholder="Buscar defeito…" style="max-width:320px"><button class="btn" id="cd-novo">+ Novo defeito</button></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Defeito</th><th></th></tr></thead>
+      <tbody id="cd-tbody"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ================= CONFIG ================= -->
+<section class="page" id="page-config">
+  <div class="page-head"><h2>Configurações</h2><p>Parâmetros globais do Firewall Management.</p></div>
+  <div class="card" style="max-width:520px">
+    <h3>Meta única de % peças com defeito</h3>
+    <div class="row" style="align-items:flex-end">
+      <div class="field"><label>Meta (%)</label><input type="number" id="cfg-meta" step="0.01" min="0"></div>
+      <button class="btn" id="cfg-salvar">Salvar meta</button>
+    </div>
+    <p class="muted" style="margin-top:10px;font-size:12.5px">A meta é exibida como linha de referência no Dashboard Produto.</p>
+  </div>
+  <div class="card" style="max-width:520px;border-color:#E8C9C5">
+    <h3 style="color:var(--danger)">Zona de risco</h3>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Ações irreversíveis sobre a base local (IndexedDB).</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn danger" id="cfg-limpar-insp">Apagar dados de inspeção</button>
+      <button class="btn danger" id="cfg-limpar-tudo">Apagar toda a base</button>
+    </div>
+  </div>
+</section>
+</main>
+</div>
+
+<div id="toast"></div>
+<div id="modal-back"><div id="modal"><div class="m-head" id="m-head"></div><div class="m-body" id="m-body"></div><div class="m-foot" id="m-foot"></div></div></div>
+
+<script>
+/* =====================================================================
+   FIREWALL MANAGEMENT V1.5 — SPA local-first (IndexedDB via Dexie)
+   Regras de negócio:
+   - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
+     legítimas: PK autoIncrement, ZERO desduplicação.
+   - Denominador: linhas cujo defeito normalizado = "Inspeção".
+   - % peças com defeito = Σ qtd(defeitos) / Σ qtd(Inspeção).
+   - Turno: recalculado pelo cadastro de operadores na importação e
+     congelado no registro na digitação.
+   - Normalização De→Para de defeitos: aplicada só na visualização.
+   ===================================================================== */
+'use strict';
+
+const db = new Dexie('FirewallManagementV1');
+db.version(1).stores({
+  inspecoes: '++id, codigo, ano, anoMes, data, codOperador, turno',
+  produtos: '++id, &codigo',
+  operadores: '++id, &matricula',
+  deParaDefeitos: '++id, &deKey',
+  defeitosCatalogo: '++id, &nome',
+  config: '&chave'
+});
+/* V1.1: índice por codN (7 dígitos) — chave de agrupamento de produto em toda a análise */
+db.version(2).stores({
+  inspecoes: '++id, codigo, codN, ano, anoMes, data, codOperador, turno',
+  produtos: '++id, &codigo',
+  operadores: '++id, &matricula',
+  deParaDefeitos: '++id, &deKey',
+  defeitosCatalogo: '++id, &nome',
+  config: '&chave'
+});
+
+/* ---------- Estado / caches ---------- */
+let deParaMap = new Map();      // deKey(lower,trim) -> Para
+let operMap = new Map();        // matricula(str) -> {nome, turno}
+let produtosMap = new Map();    // codigo(str) -> descricao (cache p/ Digitação Rápida)
+let metaPct = 1.0;              // meta única (%)
+const charts = {};              // instâncias Chart.js
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+/* ---------- Utilidades ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtInt = n => Number(n || 0).toLocaleString('pt-BR');
+const fmtPct = (n, d = 2) => Number(n || 0).toLocaleString('pt-BR', {minimumFractionDigits: d, maximumFractionDigits: d}) + '%';
+
+function toast(msg, tipo = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + tipo;
+  el.textContent = msg;
+  $('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+function isoWeek(y, m, d) {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = (dt.getUTCDay() + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - dayNum + 3);
+  const firstThu = new Date(Date.UTC(dt.getUTCFullYear(), 0, 4));
+  const fDay = (firstThu.getUTCDay() + 6) % 7;
+  firstThu.setUTCDate(firstThu.getUTCDate() - fDay + 3);
+  const wk = 1 + Math.round((dt - firstThu) / (7 * 864e5));
+  return 'W' + String(wk).padStart(2, '0');
+}
+
+/* parseDateSafe: Date | serial Excel | 'dd/mm/yyyy' | 'yyyy-mm-dd' -> {iso, ano, mes, dia, anoMes, semana} | null */
+function parseDateSafe(v) {
+  let y, m, d;
+  if (v instanceof Date && !isNaN(v)) {
+    y = v.getUTCFullYear(); m = v.getUTCMonth() + 1; d = v.getUTCDate();
+    if (y < 1990) { y = v.getFullYear(); m = v.getMonth() + 1; d = v.getDate(); }
+  } else if (typeof v === 'number' && v > 20000 && v < 80000) {
+    const base = new Date(Date.UTC(1899, 11, 30));
+    const dt = new Date(base.getTime() + Math.round(v) * 864e5);
+    y = dt.getUTCFullYear(); m = dt.getUTCMonth() + 1; d = dt.getUTCDate();
+  } else if (typeof v === 'string') {
+    const s = v.trim();
+    let mm;
+    if ((mm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { d = +mm[1]; m = +mm[2]; y = +mm[3]; }
+    else if ((mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) { y = +mm[1]; m = +mm[2]; d = +mm[3]; }
+    else return null;
+  } else return null;
+  if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const p2 = n => String(n).padStart(2, '0');
+  return { iso: `${y}-${p2(m)}-${p2(d)}`, ano: y, mes: m, dia: d, anoMes: `${y}${p2(m)}`, semana: isoWeek(y, m, d) };
+}
+
+function normDefeito(nome) {
+  const raw = String(nome ?? '').trim();
+  return deParaMap.get(raw.toLowerCase()) || raw;
+}
+const isInspecao = defNorm => {
+  const s = String(defNorm).trim().toLowerCase();
+  return s === 'inspeção' || s === 'inspecao';
+};
+function turnoDoOperador(codOperador) {
+  const op = operMap.get(String(codOperador ?? '').trim());
+  return op && op.turno ? op.turno : 'Sem Classificação';
+}
+function chipTurno(t) {
+  const s = String(t || '');
+  const cls = s.startsWith('1') ? 't1' : s.startsWith('2') ? 't2' : s.startsWith('3') ? 't3' : 't0';
+  return `<span class="chip ${cls}">${esc(s || 'Sem Classificação')}</span>`;
+}
+
+/* ---------- Caches ---------- */
+async function refreshCaches() {
+  const [dps, ops, cfg] = await Promise.all([
+    db.deParaDefeitos.toArray(), db.operadores.toArray(), db.config.get('metaPct')
+  ]);
+  deParaMap = new Map(dps.map(r => [r.deKey, r.para]));
+  operMap = new Map(ops.map(r => [String(r.matricula).trim(), { nome: r.nome, turno: r.turno }]));
+  metaPct = cfg ? Number(cfg.valor) : 1.0;
+  const n = await db.inspecoes.count();
+  $('db-status').textContent = `IndexedDB · ${fmtInt(n)} registros`;
+}
+
+/* ---------- Modal genérico ---------- */
+function openModal(titulo, bodyHTML, botoes) {
+  return new Promise(resolve => {
+    $('m-head').textContent = titulo;
+    $('m-body').innerHTML = bodyHTML;
+    const foot = $('m-foot');
+    foot.innerHTML = '';
+    botoes.forEach(b => {
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + (b.classe || '');
+      btn.textContent = b.rotulo;
+      btn.onclick = () => {
+        const dados = {};
+        $('m-body').querySelectorAll('[data-f]').forEach(el => dados[el.dataset.f] = el.value);
+        if (b.valida && !b.valida(dados)) return;
+        fecharModal(); resolve({ acao: b.acao, dados });
+      };
+      foot.appendChild(btn);
+    });
+    $('modal-back').classList.add('open');
+    const first = $('m-body').querySelector('input,select');
+    if (first) setTimeout(() => first.focus(), 50);
+  });
+}
+function fecharModal() { $('modal-back').classList.remove('open'); }
+$('modal-back').addEventListener('click', e => { if (e.target.id === 'modal-back') fecharModal(); });
+
+function confirmar(titulo, msg) {
+  return openModal(titulo, `<p style="font-size:13.5px;line-height:1.5">${msg}</p>`,
+    [{ rotulo: 'Cancelar', classe: 'sec', acao: false }, { rotulo: 'Confirmar', classe: 'danger', acao: true }]
+  ).then(r => r.acao === true);
+}
+
+/* =====================================================================
+   NAVEGAÇÃO
+===================================================================== */
+document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => showPage(btn.dataset.page)));
+function showPage(id) {
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === id));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
+  if (id === 'digitacao') initDigitacao();
+  if (id === 'dash-produto') initDash1();
+  if (id === 'comparacao') initComparacao();
+  if (id === 'cad-produtos') renderProdutos();
+  if (id === 'cad-operadores') renderOperadores();
+  if (id === 'cad-defeitos') renderDefeitos();
+  if (id === 'config') $('cfg-meta').value = metaPct;
+}
+
+/* =====================================================================
+   IMPORTAÇÃO
+===================================================================== */
+function logImp(msg) {
+  $('imp-log-card').style.display = 'block';
+  $('imp-log').textContent += msg + '\n';
+}
+function lerPlanilha(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = e => {
+      try { resolve(XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true })); }
+      catch (err) { reject(err); }
+    };
+    fr.onerror = () => reject(new Error('Falha na leitura do arquivo'));
+    fr.readAsArrayBuffer(file);
+  });
+}
+function acharAba(wb, nomes) {
+  for (const n of nomes) { const hit = wb.SheetNames.find(s => s.trim().toLowerCase() === n.toLowerCase()); if (hit) return hit; }
+  return null;
+}
+
+/* --- 1. Operadores + De_Para de defeitos --- */
+$('imp-oper-file').addEventListener('change', async e => {
+  const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+  try {
+    const wb = await lerPlanilha(file);
+    const aba = acharAba(wb, ['De_Para']) || wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    if (!rows.length) throw new Error('Aba vazia');
+    const head = rows[0].map(c => String(c ?? '').trim().toLowerCase());
+    const iMat = head.findIndex(h => h === 'matricula' || h === 'matrícula');
+    if (iMat < 0) throw new Error('Colunas Matrícula/Nome/Turno não encontradas na aba ' + aba);
+    let novosOp = 0, mantidos = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const mat = rows[i][iMat];
+      if (mat === null || mat === '') continue;
+      const matricula = String(mat).trim();
+      const existe = await db.operadores.where('matricula').equals(matricula).count();
+      if (existe) { mantidos++; continue; }
+      await db.operadores.add({
+        matricula,
+        nome: String(rows[i][iMat + 1] ?? '').trim(),
+        turno: String(rows[i][iMat + 2] ?? 'Sem Classificação').trim() || 'Sem Classificação'
+      });
+      novosOp++;
+    }
+    /* De→Para de defeitos: primeiro par de colunas 'De' | 'Para' */
+    let iDe = -1;
+    for (let c = 0; c < head.length - 1; c++) { if (head[c] === 'de' && head[c + 1] === 'para') { iDe = c; break; } }
+    let mapeados = 0;
+    if (iDe >= 0) {
+      for (let i = 1; i < rows.length; i++) {
+        const de = rows[i][iDe], para = rows[i][iDe + 1];
+        if (de === null || de === '' || para === null || para === '') continue;
+        const deKey = String(de).trim().toLowerCase();
+        const paraTxt = String(para).trim();
+        if (!deKey) continue;
+        await db.deParaDefeitos.put({ ...(await db.deParaDefeitos.where('deKey').equals(deKey).first() || {}), deKey, de: String(de).trim(), para: paraTxt });
+        if (!isInspecao(paraTxt)) await db.defeitosCatalogo.put({ ...(await db.defeitosCatalogo.where('nome').equals(paraTxt).first() || {}), nome: paraTxt });
+        mapeados++;
+      }
+    }
+    await refreshCaches();
+    logImp(`[Operadores] ${file.name} → ${novosOp} novo(s), ${mantidos} já existente(s) mantido(s); ${mapeados} mapeamento(s) De→Para de defeitos.`);
+    toast(`Operadores: ${novosOp} novos adicionados, ${mantidos} mantidos.`, 'ok');
+  } catch (err) { console.error(err); toast('Erro na importação de operadores: ' + err.message, 'err'); }
+});
+
+/* --- 2. Produtos (Tabela N) --- */
+$('imp-prod-file').addEventListener('change', async e => {
+  const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+  try {
+    const wb = await lerPlanilha(file);
+    const aba = acharAba(wb, ['Tabela N', 'TabelaN']) || wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    let novos = 0, mantidos = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const cod = rows[i][0];
+      if (cod === null || cod === '') continue;
+      const codigo = String(cod).trim();
+      const existe = await db.produtos.where('codigo').equals(codigo).count();
+      if (existe) { mantidos++; continue; }
+      await db.produtos.add({
+        codigo,
+        descricao: String(rows[i][1] ?? '').trim(),
+        cliente: String(rows[i][2] ?? '').trim(),
+        codCliente: String(rows[i][3] ?? '').trim(),
+        status: String(rows[i][4] ?? '').trim()
+      });
+      novos++;
+    }
+    logImp(`[Produtos] ${file.name} → ${novos} novo(s), ${mantidos} já existente(s) mantido(s).`);
+    toast(`Produtos: ${novos} novos adicionados, ${mantidos} mantidos.`, 'ok');
+  } catch (err) { console.error(err); toast('Erro na importação de produtos: ' + err.message, 'err'); }
+});
+
+/* --- 3. Dados de inspeção (aba "Dados", colunas A–L, filtro por ano) --- */
+$('imp-dados-file').addEventListener('change', async e => {
+  const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+  try {
+    toast('Lendo arquivo… aguarde.', '');
+    const wb = await lerPlanilha(file);
+    const aba = acharAba(wb, ['Dados']) || wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    /* Pré-parse: colunas A–L (0..11); ignora linhas sem Código */
+    const parsed = [];
+    const anos = new Map();
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r[0] === null || r[0] === '') continue;
+      const dt = parseDateSafe(r[2]);
+      if (!dt) continue;
+      const codOperador = String(r[10] ?? r[9] ?? '').trim();
+      parsed.push({
+        codigo: String(r[0]).trim(),
+        codN: String(r[1] ?? '').trim(),
+        data: dt.iso, ano: dt.ano, anoMes: dt.anoMes, semana: dt.semana,
+        inspetor: String(r[5] ?? '').trim(),
+        defeito: String(r[6] ?? '').trim(),
+        quantidade: Number(r[7]) || 0,
+        operador: String(r[9] ?? '').trim(),
+        codOperador,
+        turno: turnoDoOperador(codOperador),   // regra B: turno recalculado pelo cadastro
+        origem: 'importacao'
+      });
+      anos.set(dt.ano, (anos.get(dt.ano) || 0) + 1);
+    }
+    if (!parsed.length) throw new Error('Nenhuma linha válida encontrada na aba ' + aba);
+    /* Pergunta o ano */
+    const anosOrd = [...anos.entries()].sort((a, b) => b[0] - a[0]);
+    const opts = anosOrd.map(([a, n]) => `<option value="${a}">${a} — ${fmtInt(n)} registro(s)</option>`).join('');
+    const semTurno = parsed.filter(p => p.turno === 'Sem Classificação').length;
+    const aviso = operMap.size === 0
+      ? `<p style="color:var(--danger);font-size:12.5px;margin-top:10px">Atenção: nenhum operador cadastrado — todos os registros ficarão "Sem Classificação". Importe os operadores antes.</p>`
+      : (semTurno ? `<p style="color:var(--warn);font-size:12.5px;margin-top:10px">${fmtInt(semTurno)} registro(s) sem operador correspondente no cadastro ficarão "Sem Classificação".</p>` : '');
+    const res = await openModal('Importar dados de inspeção',
+      `<p style="font-size:13.5px;margin-bottom:12px">Arquivo lido: <b>${esc(file.name)}</b> · aba <b class="mono">${esc(aba)}</b>. Todas as linhas serão importadas integralmente (duplicatas preservadas).</p>
+       <div class="field"><label>Importar dados do ano</label><select data-f="ano">${opts}</select></div>${aviso}`,
+      [{ rotulo: 'Cancelar', classe: 'sec', acao: 'cancel' }, { rotulo: 'Importar', acao: 'ok' }]);
+    if (res.acao !== 'ok') return;
+    const anoSel = Number(res.dados.ano);
+    const finais = parsed.filter(p => p.ano === anoSel);
+    for (let i = 0; i < finais.length; i += 2000) await db.inspecoes.bulkAdd(finais.slice(i, i + 2000));
+    /* Alimenta catálogo de defeitos com nomes normalizados */
+    const nomes = new Set(finais.map(p => normDefeito(p.defeito)).filter(n => n && !isInspecao(n)));
+    for (const nome of nomes) {
+      const ex = await db.defeitosCatalogo.where('nome').equals(nome).count();
+      if (!ex) await db.defeitosCatalogo.add({ nome });
+    }
+    await refreshCaches();
+    logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(finais.length)} registro(s) importado(s) integralmente (sem desduplicação).`);
+    toast(`${fmtInt(finais.length)} registros de ${anoSel} importados.`, 'ok');
+  } catch (err) { console.error(err); toast('Erro na importação de dados: ' + err.message, 'err'); }
+});
+
+/* =====================================================================
+   DIGITAÇÃO RÁPIDA
+===================================================================== */
+async function initDigitacao() {
+  if (!$('dr-data').value) $('dr-data').value = new Date().toISOString().slice(0, 10);
+  const [prods, ops, defs] = await Promise.all([
+    db.produtos.orderBy('codigo').toArray(), db.operadores.orderBy('matricula').toArray(), db.defeitosCatalogo.orderBy('nome').toArray()
+  ]);
+  produtosMap = new Map(prods.map(p => [p.codigo, p.descricao]));
+  $('dr-produto-list').innerHTML = prods.map(p => `<option value="${esc(p.codigo)}">${esc(p.codigo)}${p.descricao ? ' — ' + esc(p.descricao) : ''}</option>`).join('');
+  $('dr-operador-list').innerHTML = ops.map(o => `<option value="${esc(o.matricula)}">${esc(o.matricula)} — ${esc(o.nome)} (${esc(o.turno)})</option>`).join('');
+  const grid = $('dr-defeitos');
+  grid.innerHTML = defs.length ? defs.map(d =>
+    `<div class="defect-item"><span>${esc(d.nome)}</span><input type="number" min="0" step="1" data-defeito="${esc(d.nome)}" placeholder="0"></div>`
+  ).join('') : '<div class="empty">Nenhum defeito cadastrado. Cadastre em "Defeitos" ou importe os dados.</div>';
+  grid.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
+    inp.closest('.defect-item').classList.toggle('filled', Number(inp.value) > 0);
+    atualizaResumo();
+  }));
+  atualizaResumo();
+  renderRecentes();
+}
+function atualizaResumo() {
+  let tot = 0, tipos = 0;
+  $('dr-defeitos').querySelectorAll('input').forEach(i => { const v = Number(i.value) || 0; if (v > 0) { tot += v; tipos++; } });
+  $('dr-resumo').textContent = tot > 0 ? `${fmtInt(tot)} defeito(s) em ${tipos} tipo(s)` : '';
+}
+$('dr-limpar').addEventListener('click', () => {
+  $('dr-defeitos').querySelectorAll('input').forEach(i => { i.value = ''; i.closest('.defect-item').classList.remove('filled'); });
+  $('dr-qtd').value = ''; atualizaResumo();
+});
+$('dr-salvar').addEventListener('click', async () => {
+  const dataStr = $('dr-data').value, codigo = $('dr-produto').value.trim(), matricula = $('dr-operador').value.trim();
+  const inspetor = $('dr-inspetor').value.trim(), qtd = Number($('dr-qtd').value) || 0;
+  if (!dataStr) return toast('Informe a data da inspeção.', 'err');
+  if (!codigo) return toast('Informe o código do produto.', 'err');
+  if (!produtosMap.has(codigo)) return toast(`Produto "${codigo}" não cadastrado. Cadastre-o em "Produtos (Matriz N)" antes de lançar.`, 'err');
+  if (!matricula) return toast('Informe a matrícula do operador.', 'err');
+  if (!operMap.has(matricula)) return toast(`Operador "${matricula}" não cadastrado. Cadastre-o em "Operadores" antes de lançar.`, 'err');
+  if (qtd <= 0) return toast('Informe a quantidade inspecionada.', 'err');
+  const dt = parseDateSafe(dataStr);
+  const op = operMap.get(matricula);
+  const base = {
+    codigo, codN: codigo.length > 7 ? codigo.slice(0, 7) : codigo,
+    data: dt.iso, ano: dt.ano, anoMes: dt.anoMes, semana: dt.semana,
+    inspetor, operador: op.nome, codOperador: matricula,
+    turno: op.turno,                       // turno congelado no momento do registro
+    origem: 'digitacao'
+  };
+  const registros = [{ ...base, defeito: 'Inspeção', quantidade: qtd }];
+  $('dr-defeitos').querySelectorAll('input').forEach(inp => {
+    const v = Number(inp.value) || 0;
+    if (v > 0) registros.push({ ...base, defeito: inp.dataset.defeito, quantidade: v });
+  });
+  const totDef = registros.slice(1).reduce((s, r) => s + r.quantidade, 0);
+  if (totDef > qtd) {
+    const ok = await confirmar('Verificação', `Foram lançados <b>${fmtInt(totDef)}</b> defeitos para <b>${fmtInt(qtd)}</b> peças inspecionadas. Confirmar mesmo assim?`);
+    if (!ok) return;
+  }
+  await db.inspecoes.bulkAdd(registros);
+  await refreshCaches();
+  toast(`Lançamento salvo: ${fmtInt(qtd)} inspecionadas, ${fmtInt(totDef)} defeito(s).`, 'ok');
+  $('dr-produto').value = ''; $('dr-operador').value = '';
+  $('dr-defeitos').querySelectorAll('input').forEach(i => { i.value = ''; i.closest('.defect-item').classList.remove('filled'); });
+  $('dr-qtd').value = ''; atualizaResumo();
+  renderRecentes();
+});
+async function renderRecentes() {
+  const rows = await db.inspecoes.orderBy('id').reverse().limit(15).toArray();
+  $('dr-recentes').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td class="mono">${esc(r.data.split('-').reverse().join('/'))}</td>
+    <td class="mono">${esc(r.codigo)}</td>
+    <td>${esc(r.operador || r.codOperador)}</td>
+    <td>${chipTurno(r.turno)}</td>
+    <td>${isInspecao(normDefeito(r.defeito)) ? '<b>Inspeção</b>' : esc(normDefeito(r.defeito))}</td>
+    <td class="num">${fmtInt(r.quantidade)}</td>
+    <td class="actions"><button class="btn sm sec" onclick="excluirRegistro(${r.id})">Excluir</button></td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">Nenhum lançamento ainda.</td></tr>';
+}
+async function excluirRegistro(id) {
+  const ok = await confirmar('Excluir registro', 'Excluir este registro individual? A ação não pode ser desfeita.');
+  if (!ok) return;
+  await db.inspecoes.delete(id);
+  await refreshCaches();
+  renderRecentes();
+  toast('Registro excluído.', 'ok');
+}
+
+/* =====================================================================
+   AGREGAÇÕES
+===================================================================== */
+/* codN efetivo: 7 dígitos à esquerda (coluna B da importação). Fallback: derivado do código de 9 dígitos. */
+function codN(r) {
+  const c = String(r.codN ?? '').trim();
+  if (c) return c;
+  const raw = String(r.codigo ?? '').trim();
+  return raw.length > 7 ? raw.slice(0, 7) : raw;
+}
+const TURNOS_EXCLUIR_PARETO = new Set(['demitido', '?']);
+
+function agrupa(rows) {
+  /* retorna {insp, def, porDefeito:Map, porDia:Map, porCodigo:Map, porTurno:Map, porOperador:Map} */
+  const g = { insp: 0, def: 0, porDefeito: new Map(), porDia: new Map(), porCodigo: new Map(), porTurno: new Map(), porOperador: new Map() };
+  for (const r of rows) {
+    const q = Number(r.quantidade) || 0;
+    const dn = normDefeito(r.defeito);
+    const ehInsp = isInspecao(dn);
+    const cod = codN(r);
+    const bump = (map, key, campo) => {
+      let o = map.get(key); if (!o) { o = { insp: 0, def: 0 }; map.set(key, o); }
+      o[campo] += q;
+    };
+    if (ehInsp) {
+      g.insp += q;
+      bump(g.porDia, r.data, 'insp'); bump(g.porCodigo, cod, 'insp');
+      bump(g.porTurno, r.turno || 'Sem Classificação', 'insp'); bump(g.porOperador, r.codOperador, 'insp');
+    } else {
+      g.def += q;
+      g.porDefeito.set(dn, (g.porDefeito.get(dn) || 0) + q);
+      bump(g.porDia, r.data, 'def'); bump(g.porCodigo, cod, 'def');
+      bump(g.porTurno, r.turno || 'Sem Classificação', 'def'); bump(g.porOperador, r.codOperador, 'def');
+    }
+  }
+  return g;
+}
+const pct = (def, insp) => insp > 0 ? def / insp * 100 : 0;
+
+async function anosDisponiveis() {
+  const ks = await db.inspecoes.orderBy('ano').uniqueKeys();
+  return ks.map(Number).sort((a, b) => b - a);
+}
+function mesesDoAno(ano) {
+  const out = [];
+  for (let m = 1; m <= 12; m++) out.push({ ano, mes: m, anoMes: `${ano}${String(m).padStart(2, '0')}` });
+  return out;
+}
+function diasDoMes(ano, mes) { return new Date(ano, mes, 0).getDate(); }
+function renderChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id).getContext('2d'), cfg);
+}
+
+/* =====================================================================
+   DASHBOARD — PRODUTO / GERAL / OPERADOR (unificado)
+   Filtros: Ano, Mês, Produto (codN, "Todos os Produtos" = sem filtro),
+   busca texto (filtra as opções do dropdown), Operador (substring da matrícula),
+   Modo (Percentual/Quantidade — aplica-se aos gráficos Histórico, Diário e Turno),
+   Top N (aplica-se aos Paretos de Defeitos, Produtos e Operador),
+   filtro por clique em Produto (reaproveita o dropdown) e por Defeito (chip dedicado).
+===================================================================== */
+let d1Pronto = false;
+let ultimasLinhasOperador = [];
+let sortState = { key: 'taxa', dir: 'desc' };
+let filtroDefeito = null;
+let filtroDia = null;    // dia-do-mês (1-31) selecionado via clique no gráfico Diário
+
+function turnoAbrev(turno) {
+  const t = String(turno || '').trim();
+  if (t.startsWith('1')) return 'T1';
+  if (t.startsWith('2')) return 'T2';
+  if (t.startsWith('3')) return 'T3';
+  if (t.toLowerCase() === 'adm') return 'ADM';
+  if (t.toLowerCase() === 'demitido') return 'DEM';
+  if (t === '?') return '?';
+  if (!t || t === 'Sem Classificação') return 'SC';
+  return t.slice(0, 3).toUpperCase();
+}
+
+async function initDash1() {
+  const anos = await anosDisponiveis();
+  const selAno = $('d1-ano');
+  selAno.innerHTML = anos.length ? anos.map(a => `<option>${a}</option>`).join('') : '<option value="">—</option>';
+  $('d1-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  const hoje = new Date();
+  if (anos.includes(hoje.getFullYear())) { selAno.value = hoje.getFullYear(); $('d1-mes').value = hoje.getMonth() + 1; }
+  else if (anos.length) { selAno.value = anos[0]; $('d1-mes').value = 1; }
+  await popularCodigosD1('');
+  if (!d1Pronto) {
+    $('d1-aplicar').addEventListener('click', renderDash1);
+    $('d1-topn').addEventListener('change', renderDash1);
+    $('d1-modo').addEventListener('change', renderDash1);
+    $('d1-operador').addEventListener('keydown', e => { if (e.key === 'Enter') renderDash1(); });
+    $('d1-limpar').addEventListener('click', limparFiltros);
+    selAno.addEventListener('change', () => popularCodigosD1(''));
+    $('d1-busca-codigo').addEventListener('input', e => popularCodigosD1(e.target.value));
+    $('page-dash-produto').addEventListener('click', e => {
+      const th = e.target.closest('th.sortable'); if (!th) return;
+      const key = th.dataset.sort;
+      if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+      else { sortState.key = key; sortState.dir = (key === 'nome' || key === 'turno') ? 'asc' : 'desc'; }
+      renderTabelaOperador();
+    });
+    d1Pronto = true;
+  }
+  renderDash1();
+}
+
+/* Reseta todos os filtros (produto, busca, operador, defeito clicado, modo, top N) e
+   volta Ano/Mês para o mês atual (ou o primeiro ano disponível). */
+async function limparFiltros() {
+  const anos = await anosDisponiveis();
+  const hoje = new Date();
+  $('d1-ano').value = anos.includes(hoje.getFullYear()) ? hoje.getFullYear() : (anos[0] ?? '');
+  $('d1-mes').value = anos.includes(hoje.getFullYear()) ? (hoje.getMonth() + 1) : 1;
+  $('d1-busca-codigo').value = '';
+  $('d1-operador').value = '';
+  $('d1-modo').value = 'pct';
+  $('d1-topn').value = '10';
+  filtroDefeito = null;
+  filtroDia = null;
+  await popularCodigosD1('');
+  $('d1-codigo').value = '';
+  renderDash1();
+}
+
+/* Dropdown de produtos: valores = codN (7 dígitos), sempre com "Todos os Produtos" no topo.
+   O campo de busca filtra as opções listadas (por código ou descrição). */
+async function popularCodigosD1(termo) {
+  termo = (termo ?? '').trim().toLowerCase();
+  const ano = Number($('d1-ano').value);
+  const rows = ano ? await db.inspecoes.where('ano').equals(ano).toArray() : [];
+  const cods = [...new Set(rows.map(r => codN(r)))].filter(Boolean).sort();
+  const prods = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  let opts = cods.map(c => ({ c, desc: prods.get(c) || '' }));
+  if (termo) opts = opts.filter(o => o.c.toLowerCase().includes(termo) || o.desc.toLowerCase().includes(termo));
+  const sel = $('d1-codigo'), atual = sel.value;
+  sel.innerHTML = '<option value="">Todos os Produtos</option>' +
+    opts.map(o => `<option value="${esc(o.c)}">${esc(o.c)}${o.desc ? ' — ' + esc(o.desc) : ''}</option>`).join('');
+  if ([...sel.options].some(o => o.value === atual)) sel.value = atual;
+}
+
+/* Clique numa barra do Pareto de Produtos: filtra (toggle) o dashboard por aquele produto. */
+async function filtrarPorProduto(codigoClicado) {
+  const atual = $('d1-codigo').value;
+  $('d1-busca-codigo').value = '';
+  await popularCodigosD1('');
+  $('d1-codigo').value = (atual === codigoClicado) ? '' : codigoClicado;
+  renderDash1();
+}
+/* Clique numa barra do Pareto de Defeitos: filtra (toggle) o dashboard por aquele defeito. */
+function filtrarPorDefeito(nomeClicado) {
+  filtroDefeito = (filtroDefeito === nomeClicado) ? null : nomeClicado;
+  renderDash1();
+}
+/* Clique num ponto do gráfico Diário: filtra (toggle) o dashboard por aquele dia-do-mês.
+   O próprio gráfico Diário continua mostrando o mês inteiro (serve de "seletor"). */
+function filtrarPorDia(diaClicado) {
+  filtroDia = (filtroDia === diaClicado) ? null : diaClicado;
+  renderDash1();
+}
+function renderChipsDash() {
+  /* Chip de Dia: inline no filtro, logo após Mês / antes de Produto */
+  const boxDia = $('d1-chip-dia');
+  if (filtroDia) {
+    boxDia.style.display = 'block';
+    boxDia.innerHTML = `<span class="filter-chip">Dia: ${String(filtroDia).padStart(2, '0')} <button type="button" aria-label="Remover filtro de dia">×</button></span>`;
+    boxDia.querySelector('button').addEventListener('click', () => { filtroDia = null; renderDash1(); });
+  } else { boxDia.style.display = 'none'; boxDia.innerHTML = ''; }
+
+  /* Chip de Defeito: abaixo da barra de filtros */
+  const box = $('d1-chips');
+  if (!filtroDefeito) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'flex'; box.style.gap = '8px'; box.style.flexWrap = 'wrap';
+  box.innerHTML = `<span class="filter-chip">Defeito: ${esc(filtroDefeito)} <button type="button" aria-label="Remover filtro de defeito">×</button></span>`;
+  box.querySelector('button').addEventListener('click', () => { filtroDefeito = null; renderDash1(); });
+}
+
+/* Destrói todos os gráficos do Dashboard e limpa a tabela — usado quando não há Ano/dados selecionáveis. */
+function limparGraficosDashboard() {
+  ['d1-chart-meta', 'd1-chart-dia', 'd1-chart-pareto', 'd2-chart-prod', 'd2-chart-oper', 'd2-chart-turno'].forEach(id => {
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  });
+  $('d2-tbl-oper').innerHTML = '<tr><td colspan="6" class="empty">Sem registros para o período.</td></tr>';
+}
+
+async function renderDash1() {
+  const ano = Number($('d1-ano').value), mes = Number($('d1-mes').value);
+  const codigoSel = $('d1-codigo').value;
+  const operadorSel = ($('d1-operador').value || '').trim().toLowerCase();
+  const modo = $('d1-modo').value; // 'pct' | 'qtd'
+  const topN = Number($('d1-topn').value);
+  renderChipsDash();
+  if (!ano) {
+    $('d1-kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">Sem dados de inspeção. Importe ou lance registros.</div>';
+    limparGraficosDashboard();
+    return;
+  }
+  const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+
+  const todasRows = await db.inspecoes.where('ano').equals(ano).toArray();
+  const bate = r => {
+    if (codigoSel && codN(r) !== codigoSel) return false;
+    if (operadorSel && !String(r.codOperador || '').toLowerCase().includes(operadorSel)) return false;
+    if (filtroDefeito) { const dn = normDefeito(r.defeito); if (!isInspecao(dn) && dn !== filtroDefeito) return false; }
+    return true;
+  };
+  const rowsAno = todasRows.filter(bate);
+  const rowsMesFull = rowsAno.filter(r => r.anoMes === anoMesSel);          // mês inteiro, ignora filtro de Dia — alimenta o gráfico Diário (o "seletor")
+  const effectiveRows = filtroDia ? rowsMesFull.filter(r => parseInt(r.data.slice(8, 10), 10) === filtroDia) : rowsMesFull;
+  const gMes = agrupa(effectiveRows);                                       // respeita o filtro de Dia — alimenta KPIs, Paretos, Turno e a Tabela
+  const pctAtual = pct(gMes.def, gMes.insp);
+  const ppm = gMes.insp > 0 ? gMes.def / gMes.insp * 1e6 : 0;
+  $('d1-kpis').innerHTML = `
+    <div class="kpi"><div class="lab">Inspecionadas (${MESES[mes - 1]}${filtroDia ? ', dia ' + String(filtroDia).padStart(2, '0') : ''})</div><div class="val">${fmtInt(gMes.insp)}</div></div>
+    <div class="kpi"><div class="lab">Defeitos</div><div class="val">${fmtInt(gMes.def)}</div></div>
+    <div class="kpi"><div class="lab">% peças com defeito</div><div class="val ${pctAtual <= metaPct ? 'ok' : 'bad'}">${fmtPct(pctAtual)}</div></div>
+    <div class="kpi"><div class="lab">PPM</div><div class="val">${fmtInt(Math.round(ppm))}</div></div>`;
+
+  /* Gráfico 1: histórico do ano (Jan–Dez) — área cinza (peças inspecionadas) ao fundo,
+     linha de % (ou quantidade, conforme Modo) à frente. Meses sem inspeção não geram ponto (nunca 0%).
+     Não é afetado pelo filtro de Dia (é uma visão mensal do ano inteiro). */
+  const meses12 = mesesDoAno(ano);
+  const gPorMes = meses12.map(j => agrupa(rowsAno.filter(r => r.anoMes === j.anoMes)));
+  const valMes = g => g.insp > 0 ? (modo === 'qtd' ? g.def : pct(g.def, g.insp)) : null;
+  const dsHistorico = [
+    { type: 'line', label: 'Peças inspecionadas', data: gPorMes.map(g => g.insp), yAxisID: 'yPct2',
+      borderColor: 'transparent', backgroundColor: 'rgba(139,149,176,.28)', fill: true, tension: .3, pointRadius: 0, order: 0,
+      datalabels: { display: false } },
+    { type: 'line', label: modo === 'qtd' ? 'Quantidade de defeitos' : '% peças com defeito', data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
+      borderColor: '#3A6EF0', backgroundColor: '#3A6EF0', borderWidth: 2, pointRadius: 3, tension: .25, order: 2,
+      datalabels: { display: true, align: 'top', offset: 4, formatter: v => v == null ? '' : (modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1)), color: '#1A1F2E', font: { size: 9, weight: 600 } } }
+  ];
+  if (modo === 'pct') dsHistorico.push({ type: 'line', label: `Meta (${fmtPct(metaPct)})`, data: meses12.map(() => metaPct), yAxisID: 'yPct',
+    borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, order: 1, datalabels: { display: false } });
+  renderChart('d1-chart-meta', {
+    data: { labels: meses12.map(j => MESES[j.mes - 1].slice(0, 3)), datasets: dsHistorico },
+    options: { responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onClick: (evt, elements) => { if (!elements.length) return; const mesClicado = meses12[elements[0].index].mes; if (Number($('d1-mes').value) === mesClicado) return; $('d1-mes').value = mesClicado; renderDash1(); },
+      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : (modo === 'qtd' ? fmtInt(c.parsed.y) : fmtPct(c.parsed.y))) } } },
+      scales: {
+        yPct: { beginAtZero: true, position: 'left', ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } },
+        yPct2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
+      } }
+  });
+
+  /* Gráfico 2: diário do mês selecionado — SEMPRE o mês inteiro (é o "seletor" do filtro de Dia).
+     Sem dados = sem ponto, nunca 0%. Clique num dia filtra (toggle) o restante do dashboard. */
+  const nd = diasDoMes(ano, mes);
+  const gDiaFull = agrupa(rowsMesFull);
+  const diasArr = [];
+  for (let d = 1; d <= nd; d++) {
+    const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const o = gDiaFull.porDia.get(iso);
+    diasArr.push({ dia: d, insp: o ? o.insp : 0, def: o ? o.def : 0, val: o ? (modo === 'qtd' ? o.def : pct(o.def, o.insp)) : null });
+  }
+  const corPonto = d => d === filtroDia ? '#D4A017' : '#3A6EF0';
+  const dsDiario = [
+    { label: modo === 'qtd' ? 'Defeitos por dia' : '% rejeição diária', data: diasArr.map(x => x.val), spanGaps: false,
+      borderColor: '#3A6EF0', backgroundColor: '#3A6EF0',
+      pointBackgroundColor: diasArr.map(x => corPonto(x.dia)), pointRadius: diasArr.map(x => x.dia === filtroDia ? 6 : 3), borderWidth: 2, tension: .2,
+      datalabels: { display: true, align: 'top', offset: 3, formatter: v => v == null ? '' : (modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1)), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
+  ];
+  if (modo === 'pct') dsDiario.push({ label: `Meta (${fmtPct(metaPct)})`, data: diasArr.map(() => metaPct),
+    borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, datalabels: { display: false } });
+  renderChart('d1-chart-dia', {
+    type: 'line',
+    data: { labels: diasArr.map(x => String(x.dia).padStart(2, '0')), datasets: dsDiario },
+    options: { responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => { if (!elements.length) return; filtrarPorDia(diasArr[elements[0].index].dia); },
+      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (c.parsed.y == null ? 'Sem inspeção' : (modo === 'qtd' ? fmtInt(c.parsed.y) + ' defeito(s)' : fmtPct(c.parsed.y)) + ` (${fmtInt(diasArr[c.dataIndex].def)}/${fmtInt(diasArr[c.dataIndex].insp)})`) } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } } } }
+  });
+
+  /* Pareto de Produtos, por Operador e de Defeitos — barras empilhadas por Turno (T1/T2/T3 + Outros),
+     como no Scrap Manager. O clique (Produtos/Defeitos) continua filtrando o dashboard. */
+  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const porProdTurno = agrupaTurnoPorChave(effectiveRows, r => codN(r));
+  desenharParetoEmpilhado('d2-chart-prod', porProdTurno, topN, { mapLabel: c => prodsMap.get(c), onBarClick: filtrarPorProduto });
+
+  const porOperTurno = agrupaTurnoPorChave(effectiveRows, r => r.codOperador);
+  desenharParetoEmpilhado('d2-chart-oper', porOperTurno, topN, {
+    xLabel: mat => `${mat}-${turnoAbrev((operMap.get(String(mat).trim()) || {}).turno)}`,
+    tooltipTitle: mat => (operMap.get(String(mat).trim()) || {}).nome || mat
+  });
+
+  const porDefeitoTurno = agrupaTurnoPorChave(effectiveRows, r => normDefeito(r.defeito));
+  desenharParetoEmpilhado('d1-chart-pareto', porDefeitoTurno, topN, { onBarClick: filtrarPorDefeito });
+
+  /* Pareto por Turno — Modo Percentual: % peças com defeito (rejeição) por turno.
+     Modo Quantidade: soma de peças inspecionadas por turno. "Demitido" e "?" ocultos aqui. Não é empilhado (já é a própria quebra por turno). */
+  const ordemT = ['1º Turno', '2º Turno', '3º Turno'];
+  const turnos = [...gMes.porTurno.entries()]
+    .filter(([t]) => !TURNOS_EXCLUIR_PARETO.has(String(t).trim().toLowerCase()))
+    .sort((a, b) => { const ia = ordemT.indexOf(a[0]), ib = ordemT.indexOf(b[0]); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+  const corT = t => t.startsWith('1') ? '#4F7CFF' : t.startsWith('2') ? '#22C997' : t.startsWith('3') ? '#F5A623' : '#8A97A3';
+  const valorTurno = o => modo === 'qtd' ? o.insp : pct(o.def, o.insp);
+  renderChart('d2-chart-turno', {
+    type: 'bar',
+    data: {
+      labels: turnos.map(([t]) => t),
+      datasets: [{ label: modo === 'qtd' ? 'Peças inspecionadas' : '% peças com defeito', data: turnos.map(([, o]) => valorTurno(o)), backgroundColor: turnos.map(([t]) => corT(t)), borderRadius: 4, maxBarThickness: 80,
+        datalabels: { display: true, anchor: 'end', align: 'top', formatter: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1), color: '#1A1F2E', font: { size: 11, weight: 600 } } }]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => modo === 'qtd' ? fmtInt(c.parsed.y) + ' peça(s) inspecionada(s)' : fmtPct(c.parsed.y) + ` (${fmtInt(turnos[c.dataIndex][1].def)} def / ${fmtInt(turnos[c.dataIndex][1].insp)} insp)` } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } } } }
+  });
+
+  /* Tabela Operador/Turno — Taxa de Aderência = defeitos / inspecionadas (ordenável) */
+  ultimasLinhasOperador = [...gMes.porOperador.entries()]
+    .filter(([, o]) => o.insp > 0 || o.def > 0)
+    .map(([mat, o]) => {
+      const cad = operMap.get(String(mat).trim());
+      return { mat, nome: cad ? cad.nome : '—', turno: cad ? cad.turno : 'Sem Classificação', insp: o.insp, def: o.def, taxa: pct(o.def, o.insp) };
+    });
+  renderTabelaOperador();
+}
+
+function renderTabelaOperador() {
+  const { key, dir } = sortState;
+  const linhas = [...ultimasLinhasOperador].sort((a, b) => {
+    let c;
+    if (key === 'mat') {
+      const na = parseInt(a.mat, 10), nb = parseInt(b.mat, 10);
+      c = (!isNaN(na) && !isNaN(nb)) ? na - nb : String(a.mat).localeCompare(String(b.mat));
+    } else {
+      const va = a[key], vb = b[key];
+      c = (typeof va === 'string') ? va.toLowerCase().localeCompare(String(vb).toLowerCase()) : va - vb;
+    }
+    return dir === 'asc' ? c : -c;
+  });
+  $('d2-tbl-oper').innerHTML = linhas.length ? linhas.map(l => `<tr>
+    <td class="mono">${esc(l.mat)}</td><td>${esc(l.nome)}</td><td>${chipTurno(l.turno)}</td>
+    <td class="num">${fmtInt(l.insp)}</td><td class="num">${fmtInt(l.def)}</td>
+    <td class="num pct-cell" style="color:${l.taxa <= metaPct ? 'var(--ok)' : 'var(--danger)'}">${l.insp > 0 ? fmtPct(l.taxa) : '—'}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem registros para o período.</td></tr>';
+  document.querySelectorAll('#page-dash-produto th.sortable').forEach(th => {
+    th.classList.toggle('sort-asc', th.dataset.sort === key && dir === 'asc');
+    th.classList.toggle('sort-desc', th.dataset.sort === key && dir === 'desc');
+  });
+}
+
+/* Agrupa a quantidade de DEFEITOS (ignora linhas "Inspeção") por uma chave (produto/operador/defeito),
+   quebrando por turno T1/T2/T3 + "Outros" (ADM, Sem Classificação, Demitido, "?"). */
+function agrupaTurnoPorChave(rows, chaveFn) {
+  const m = new Map();
+  for (const r of rows) {
+    const dn = normDefeito(r.defeito);
+    if (isInspecao(dn)) continue;
+    const chave = chaveFn(r);
+    if (!chave) continue;
+    let o = m.get(chave); if (!o) { o = { T1: 0, T2: 0, T3: 0, Outros: 0, total: 0 }; m.set(chave, o); }
+    const q = Number(r.quantidade) || 0;
+    const t = String(r.turno || '').trim();
+    const bucket = t.startsWith('1') ? 'T1' : t.startsWith('2') ? 'T2' : t.startsWith('3') ? 'T3' : 'Outros';
+    o[bucket] += q; o.total += q;
+  }
+  return m;
+}
+
+/* Pareto empilhado por turno (T1/T2/T3 + Outros) + linha de % acumulado — como no Scrap Manager.
+   opts.mapLabel(chave): texto extra anexado ao rótulo do eixo X (ex.: descrição do produto).
+   opts.xLabel(chave): sobrescreve o rótulo do eixo X (ex.: "245-T1" no Pareto de Operador).
+   opts.tooltipTitle(chave): sobrescreve o título do tooltip (ex.: nome completo do operador/produto).
+   opts.onBarClick(chave): torna as barras clicáveis (cursor pointer + callback). */
+function desenharParetoEmpilhado(canvasId, mapa, topN, opts = {}) {
+  const { mapLabel = null, xLabel = null, tooltipTitle = null, onBarClick = null } = opts;
+  let itens = [...mapa.entries()].sort((a, b) => b[1].total - a[1].total);
+  const totalGeral = itens.reduce((s, [, v]) => s + v.total, 0);
+  if (topN > 0) itens = itens.slice(0, topN);
+  let acum = 0;
+  const cumul = itens.map(([, v]) => { acum += v.total; return totalGeral > 0 ? acum / totalGeral * 100 : 0; });
+  const labels = itens.map(([k]) => {
+    if (xLabel) return xLabel(k);
+    let txt = k;
+    if (mapLabel) { const d = mapLabel(k); if (d) txt = `${k} — ${d}`; }
+    return txt.length > 24 ? txt.slice(0, 23) + '…' : txt;
+  });
+  const temOutros = itens.some(([, v]) => v.Outros > 0);
+  const maiorTotal = itens.reduce((m, [, v]) => Math.max(m, v.total), 0);
+  const maxYComRespiro = maiorTotal > 0 ? Math.ceil(maiorTotal * 1.18) : undefined; // headroom p/ o rótulo de total não cortar
+  const barDatasets = [
+    { type: 'bar', label: '1º Turno', data: itens.map(([, v]) => v.T1), backgroundColor: '#4F7CFF', stack: 'turno', yAxisID: 'y' },
+    { type: 'bar', label: '2º Turno', data: itens.map(([, v]) => v.T2), backgroundColor: '#22C997', stack: 'turno', yAxisID: 'y' },
+    { type: 'bar', label: '3º Turno', data: itens.map(([, v]) => v.T3), backgroundColor: '#F5A623', stack: 'turno', yAxisID: 'y' }
+  ];
+  if (temOutros) barDatasets.push({ type: 'bar', label: 'Outros', data: itens.map(([, v]) => v.Outros), backgroundColor: '#8A97A3', stack: 'turno', yAxisID: 'y' });
+  /* Rótulo com o total (soma dos turnos) no topo da última barra empilhada */
+  barDatasets[barDatasets.length - 1].datalabels = { display: true, anchor: 'end', align: 'top', color: '#1A1F2E', font: { size: 10, weight: 600 },
+    formatter: (v, ctx) => fmtInt(itens[ctx.dataIndex][1].total) };
+  const datasets = [...barDatasets,
+    { type: 'line', label: '% acumulado', data: cumul, borderColor: '#D4A017', backgroundColor: '#D4A017', pointRadius: 3, borderWidth: 2, yAxisID: 'y1', datalabels: { display: false } }
+  ];
+  renderChart(canvasId, {
+    data: { labels, datasets },
+    options: { responsive: true, maintainAspectRatio: false,
+      onClick: onBarClick ? (evt, elements) => { if (!elements.length) return; onBarClick(itens[elements[0].index][0]); } : undefined,
+      onHover: onBarClick ? (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; } : undefined,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: { callbacks: {
+          title: tooltipTitle ? items => tooltipTitle(itens[items[0].dataIndex][0]) : undefined,
+          label: c => c.dataset.type === 'line' ? '% acumulado: ' + fmtPct(c.parsed.y, 1) : `${c.dataset.label}: ${fmtInt(c.parsed.y)}`
+        } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { maxRotation: 60, minRotation: 30, font: { size: 10.5 } } },
+        y: { stacked: true, beginAtZero: true, suggestedMax: maxYComRespiro, position: 'left', title: { display: true, text: 'Quantidade' } },
+        y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+      } }
+  });
+}
+
+/* =====================================================================
+   COMPARAÇÃO COM ACTION PLAN (Firebase/Firestore do Sistema ActionPlan)
+   - Mesma config pública do Action Plan (protegida por Auth + Firestore Rules,
+     não por segredo). Login com e-mail/senha reaproveita a conta já existente.
+   - Só considera o Plano cujo título contém "GP12"/"GP-12" (único com
+     Operador/Quantidade/Data de Produção/Recorrências, comparável ao Firewall).
+   - Vínculo de produto: subtopico.codigo_subitem (ex.: "1234567xx" ou
+     "1234567xx/1234568xx" — variantes esquerda/direita) → 7 dígitos → codN.
+   - "Best match": duas datas (inspeção no Firewall x produção no Action Plan)
+     são consideradas o mesmo evento se a diferença em dias ≤ janela escolhida.
+===================================================================== */
+const AP_FIREBASE_CONFIG = { apiKey: "AIzaSyDSVYsBPhyR94KAmnBxhU9-HOhIumFgUp4", authDomain: "planodeacao-c6d12.firebaseapp.com", projectId: "planodeacao-c6d12", storageBucket: "planodeacao-c6d12.firebasestorage.app", messagingSenderId: "18947628416", appId: "1:18947628416:web:29a712de7a620499083565" };
+let apDb = null;
+let apPronto = false;
+const apState = { logado: false, email: null, planoGP12Id: null, subtopicos: [], subtopicoPorCodigo: new Map(), ocorrencias: [] };
+
+function apExtrairCodigos(codigoSubitem) {
+  return String(codigoSubitem || '').split('/')
+    .map(s => { const m = s.match(/\d+/); return m ? m[0].slice(0, 7) : ''; })
+    .filter(c => c.length === 7);
+}
+function apDiasEntre(iso1, iso2) { return Math.abs((new Date(iso1 + 'T00:00:00') - new Date(iso2 + 'T00:00:00')) / 86400000); }
+
+async function initComparacao() {
+  if (!apPronto) {
+    $('ap-conectar').addEventListener('click', apFazerLogin);
+    $('ap-senha').addEventListener('keydown', e => { if (e.key === 'Enter') apFazerLogin(); });
+    $('ap-desconectar').addEventListener('click', apDesconectar);
+    $('ap-atualizar').addEventListener('click', apAtualizarComparacao);
+    apPronto = true;
+  }
+  if (apState.logado) { await apMostrarPainel(); }
+}
+
+async function apFazerLogin() {
+  const email = $('ap-email').value.trim(), senha = $('ap-senha').value;
+  if (!email || !senha) { $('ap-login-status').textContent = 'Preencha e-mail e senha.'; return; }
+  $('ap-login-status').textContent = 'Conectando…';
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(AP_FIREBASE_CONFIG);
+    apDb = firebase.firestore();
+    await firebase.auth().signInWithEmailAndPassword(email, senha);
+    apState.logado = true;
+    apState.email = email;
+    $('ap-senha').value = '';
+    await apMostrarPainel();
+  } catch (err) {
+    console.error(err);
+    $('ap-login-status').textContent = 'Falha no login: ' + (err.message || 'verifique e-mail e senha.');
+  }
+}
+async function apDesconectar() {
+  try { await firebase.auth().signOut(); } catch (e) {}
+  apState.logado = false; apState.email = null;
+  $('ap-painel').style.display = 'none';
+  $('ap-login-card').style.display = 'block';
+  $('ap-login-status').textContent = '';
+}
+
+async function apMostrarPainel() {
+  $('ap-login-card').style.display = 'none';
+  $('ap-painel').style.display = 'block';
+  $('ap-conectado-como').textContent = `Conectado como ${apState.email}`;
+  const anos = await anosDisponiveis();
+  $('ap-ano').innerHTML = anos.length ? anos.map(a => `<option>${a}</option>`).join('') : '<option value="">—</option>';
+  $('ap-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  const hoje = new Date();
+  if (anos.includes(hoje.getFullYear())) { $('ap-ano').value = hoje.getFullYear(); $('ap-mes').value = hoje.getMonth() + 1; }
+  await apCarregarDadosActionPlan();
+  await apAtualizarComparacao();
+}
+
+/* Busca o Plano "GP12", seus Sub-Tópicos e todas as "acoes" (problemas) dele,
+   montando uma lista plana de ocorrências (principal + cada recorrência, cada uma com sua própria data). */
+async function apCarregarDadosActionPlan() {
+  toast('Carregando dados do Action Plan…', '');
+  const planosSnap = await apDb.collection('planos').get();
+  const planoGP12 = planosSnap.docs.map(d => ({ id: d.id, ...d.data() })).find(p => /gp[\s-]?12/i.test(p.titulo || ''));
+  if (!planoGP12) { toast('Não encontrei um Plano com "GP12" no título no Action Plan.', 'err'); return; }
+  apState.planoGP12Id = planoGP12.id;
+
+  const subtSnap = await apDb.collection('subtopicos').where('plano_id', '==', planoGP12.id).get();
+  apState.subtopicos = subtSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  apState.subtopicoPorCodigo = new Map();
+  for (const s of apState.subtopicos) for (const cod of apExtrairCodigos(s.codigo_subitem)) apState.subtopicoPorCodigo.set(cod, s);
+
+  const acoesSnap = await apDb.collection('acoes').where('plano_id', '==', planoGP12.id).get();
+  const ocorrencias = [];
+  acoesSnap.docs.forEach(d => {
+    const p = d.data();
+    if (!p.subtopico_id) return;
+    ocorrencias.push({ subtopicoId: p.subtopico_id, data: p.data_producao || p.data_abertura, quantidade: Number(p.quantidade) || 0, tipo: 'principal', problemaId: d.id });
+    (p.recorrencias || []).forEach(r => {
+      ocorrencias.push({ subtopicoId: p.subtopico_id, data: r.data_producao || p.data_abertura, quantidade: Number(r.quantidade) || 0, tipo: 'recorrencia', problemaId: d.id });
+    });
+  });
+  apState.ocorrencias = ocorrencias.filter(o => !!o.data);
+  toast(`Action Plan: ${apState.subtopicos.length} sub-tópico(s), ${apState.ocorrencias.length} ocorrência(s) no Plano GP12.`, 'ok');
+}
+
+async function apAtualizarComparacao() {
+  if (!apState.planoGP12Id) { return; }
+  const ano = Number($('ap-ano').value), mes = Number($('ap-mes').value);
+  const topN = Number($('ap-topn').value), janela = Number($('ap-janela').value), criterio = $('ap-criterio').value;
+  if (!ano) return;
+  await apRenderDirecao1(ano, mes, topN, janela);
+  await apRenderDirecao2(ano, mes, topN, janela, criterio);
+}
+
+/* Direção 1: top produtos do Firewall (por defeitos, no mês) → existe ação no Action Plan? */
+async function apRenderDirecao1(ano, mes, topN, janela) {
+  const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+  const rowsFW = await db.inspecoes.where('anoMes').equals(anoMesSel).toArray();
+  const gFW = agrupa(rowsFW);
+  let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
+  if (topN > 0) itens = itens.slice(0, topN);
+  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+
+  const linhas = itens.map(([codigo, o]) => {
+    const datasDefeitoFW = rowsFW.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
+    const sub = apState.subtopicoPorCodigo.get(codigo);
+    let ocorrEncontradas = [];
+    if (sub) {
+      ocorrEncontradas = apState.ocorrencias.filter(oc => oc.subtopicoId === sub.id && datasDefeitoFW.some(dfw => apDiasEntre(dfw, oc.data) <= janela));
+    }
+    return {
+      codigo, descricaoFW: prodsMap.get(codigo) || '', defeitosFW: o.def,
+      subtopico: sub ? sub.descricao : null, ocorrencias: ocorrEncontradas.length,
+      recorrencias: ocorrEncontradas.filter(x => x.tipo === 'recorrencia').length,
+      temSubtopico: !!sub
+    };
+  });
+
+  $('ap-tbl-d1').innerHTML = linhas.length ? linhas.map(l => `<tr>
+    <td class="mono">${esc(l.codigo)}</td><td>${esc(l.descricaoFW)}</td><td class="num">${fmtInt(l.defeitosFW)}</td>
+    <td>${l.subtopico ? esc(l.subtopico) : '<span class="muted">— sem sub-tópico cadastrado —</span>'}</td>
+    <td class="num">${fmtInt(l.ocorrencias)}</td><td class="num">${fmtInt(l.recorrencias)}</td>
+    <td>${apSituacaoBadge(l)}</td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">Sem produtos com defeito no período selecionado.</td></tr>';
+}
+function apSituacaoBadge(l) {
+  if (!l.temSubtopico) return '<span class="chip t0">Sem cadastro no AP</span>';
+  if (l.ocorrencias > 0) return '<span class="chip t2">✓ Tem ação</span>';
+  return '<span class="chip" style="background:var(--danger)">⚠ Sem ação encontrada</span>';
+}
+
+/* Direção 2: top itens do Action Plan (por ocorrências ou quantidade, no mês) → foram apontados no Firewall? */
+async function apRenderDirecao2(ano, mes, topN, janela, criterio) {
+  const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+  const inicioMes = `${anoMesSel.slice(0, 4)}-${anoMesSel.slice(4, 6)}-01`;
+  const fimMesDia = diasDoMes(ano, mes);
+  const fimMes = `${anoMesSel.slice(0, 4)}-${anoMesSel.slice(4, 6)}-${String(fimMesDia).padStart(2, '0')}`;
+  const ocorrPeriodo = apState.ocorrencias.filter(oc => oc.data >= inicioMes && oc.data <= fimMes);
+
+  const porSub = new Map();
+  for (const oc of ocorrPeriodo) {
+    let o = porSub.get(oc.subtopicoId); if (!o) { o = { ocorrencias: 0, quantidade: 0 }; porSub.set(oc.subtopicoId, o); }
+    o.ocorrencias++; o.quantidade += oc.quantidade;
+  }
+  let itens = [...porSub.entries()].sort((a, b) => criterio === 'quantidade' ? b[1].quantidade - a[1].quantidade : b[1].ocorrencias - a[1].ocorrencias);
+  if (topN > 0) itens = itens.slice(0, topN);
+
+  const subInfo = new Map(apState.subtopicos.map(s => [s.id, s]));
+  const rowsFWAno = await db.inspecoes.where('ano').equals(ano).toArray();
+
+  const linhas = itens.map(([subId, agg]) => {
+    const sub = subInfo.get(subId);
+    const codigos = sub ? apExtrairCodigos(sub.codigo_subitem) : [];
+    const ocorrSub = ocorrPeriodo.filter(oc => oc.subtopicoId === subId);
+    let encontrado = false, defeitosCorrespondentes = 0;
+    for (const codigo of codigos) {
+      const datasFW = rowsFWAno.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
+      for (const oc of ocorrSub) {
+        const datasBatendo = datasFW.filter(dfw => apDiasEntre(dfw, oc.data) <= janela);
+        if (datasBatendo.length) { encontrado = true; defeitosCorrespondentes += datasBatendo.length; }
+      }
+    }
+    return { subtopico: sub ? sub.descricao : '(sub-tópico removido)', codigos: codigos.join(' / '), ocorrencias: agg.ocorrencias, quantidade: agg.quantidade, encontrado, defeitosCorrespondentes, semCodigo: codigos.length === 0 };
+  });
+
+  $('ap-tbl-d2').innerHTML = linhas.length ? linhas.map(l => `<tr>
+    <td>${esc(l.subtopico)}</td><td class="mono">${esc(l.codigos) || '—'}</td>
+    <td class="num">${fmtInt(l.ocorrencias)}</td><td class="num">${fmtInt(l.quantidade)}</td>
+    <td>${l.semCodigo ? '<span class="chip t0">Sem código cadastrado</span>' : (l.encontrado ? '<span class="chip t2">✓ Apontado no Firewall</span>' : '<span class="chip" style="background:var(--danger)">⚠ Não encontrado no Firewall</span>')}</td>
+    <td class="num">${fmtInt(l.defeitosCorrespondentes)}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem ações no Plano GP12 para o período selecionado.</td></tr>';
+}
+
+/* =====================================================================
+   CADASTROS (CRUD)
+===================================================================== */
+/* ---- Produtos ---- */
+async function renderProdutos() {
+  const busca = ($('cp-busca').value || '').toLowerCase();
+  let rows = await db.produtos.orderBy('codigo').toArray();
+  if (busca) rows = rows.filter(p => (p.codigo + ' ' + p.descricao + ' ' + p.cliente).toLowerCase().includes(busca));
+  $('cp-tbody').innerHTML = rows.length ? rows.map(p => `<tr>
+    <td class="mono">${esc(p.codigo)}</td><td>${esc(p.descricao)}</td><td>${esc(p.cliente)}</td>
+    <td class="mono">${esc(p.codCliente)}</td><td>${esc(p.status)}</td>
+    <td class="actions"><button class="btn sm sec" onclick="editarProduto(${p.id})">Editar</button> <button class="btn sm danger" onclick="excluirProduto(${p.id})">Excluir</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">Nenhum produto cadastrado.</td></tr>';
+}
+$('cp-busca').addEventListener('input', renderProdutos);
+function formProduto(p = {}) {
+  return `<div class="field"><label>Código *</label><input data-f="codigo" value="${esc(p.codigo || '')}" class="mono"></div>
+    <div class="field"><label>Descrição</label><input data-f="descricao" value="${esc(p.descricao || '')}"></div>
+    <div class="field"><label>Cliente</label><input data-f="cliente" value="${esc(p.cliente || '')}"></div>
+    <div class="field"><label>Cod Cliente</label><input data-f="codCliente" value="${esc(p.codCliente || '')}" class="mono"></div>
+    <div class="field"><label>Status</label><input data-f="status" value="${esc(p.status || '')}"></div>`;
+}
+$('cp-novo').addEventListener('click', async () => {
+  const r = await openModal('Novo produto', formProduto(), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.codigo.trim()) { toast('Código é obrigatório.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.produtos.add({ codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), codCliente: r.dados.codCliente.trim(), status: r.dados.status.trim() }); toast('Produto cadastrado.', 'ok'); renderProdutos(); }
+  catch { toast('Já existe um produto com este código.', 'err'); }
+});
+async function editarProduto(id) {
+  const p = await db.produtos.get(id); if (!p) return;
+  const r = await openModal('Editar produto', formProduto(p), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.codigo.trim()) { toast('Código é obrigatório.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.produtos.update(id, { codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), codCliente: r.dados.codCliente.trim(), status: r.dados.status.trim() }); toast('Produto atualizado.', 'ok'); renderProdutos(); }
+  catch { toast('Já existe um produto com este código.', 'err'); }
+}
+async function excluirProduto(id) {
+  const ok = await confirmar('Excluir produto', 'Excluir este produto do cadastro? Os registros de inspeção existentes não são afetados.');
+  if (!ok) return;
+  await db.produtos.delete(id); toast('Produto excluído.', 'ok'); renderProdutos();
+}
+
+/* ---- Operadores ---- */
+async function renderOperadores() {
+  const busca = ($('co-busca').value || '').toLowerCase();
+  let rows = await db.operadores.orderBy('matricula').toArray();
+  if (busca) rows = rows.filter(o => (o.matricula + ' ' + o.nome).toLowerCase().includes(busca));
+  $('co-tbody').innerHTML = rows.length ? rows.map(o => `<tr>
+    <td class="mono">${esc(o.matricula)}</td><td>${esc(o.nome)}</td><td>${chipTurno(o.turno)}</td>
+    <td class="actions"><button class="btn sm sec" onclick="editarOperador(${o.id})">Editar</button> <button class="btn sm danger" onclick="excluirOperador(${o.id})">Excluir</button></td>
+  </tr>`).join('') : '<tr><td colspan="4" class="empty">Nenhum operador cadastrado.</td></tr>';
+}
+$('co-busca').addEventListener('input', renderOperadores);
+function formOperador(o = {}) {
+  const t = o.turno || '1º Turno';
+  const opts = ['1º Turno', '2º Turno', '3º Turno', 'ADM', 'Sem Classificação'].map(x => `<option ${x === t ? 'selected' : ''}>${x}</option>`).join('');
+  return `<div class="field"><label>Matrícula *</label><input data-f="matricula" value="${esc(o.matricula || '')}" class="mono"></div>
+    <div class="field"><label>Nome</label><input data-f="nome" value="${esc(o.nome || '')}"></div>
+    <div class="field"><label>Turno</label><select data-f="turno">${opts}</select></div>`;
+}
+$('co-novo').addEventListener('click', async () => {
+  const r = await openModal('Novo operador', formOperador(), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.matricula.trim()) { toast('Matrícula é obrigatória.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.operadores.add({ matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno }); await refreshCaches(); toast('Operador cadastrado.', 'ok'); renderOperadores(); }
+  catch { toast('Já existe um operador com esta matrícula.', 'err'); }
+});
+async function editarOperador(id) {
+  const o = await db.operadores.get(id); if (!o) return;
+  const r = await openModal('Editar operador', formOperador(o), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.matricula.trim()) { toast('Matrícula é obrigatória.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.operadores.update(id, { matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno }); await refreshCaches(); toast('Operador atualizado. Registros já gravados mantêm o turno congelado.', 'ok'); renderOperadores(); }
+  catch { toast('Já existe um operador com esta matrícula.', 'err'); }
+}
+async function excluirOperador(id) {
+  const ok = await confirmar('Excluir operador', 'Excluir este operador do cadastro? Os registros de inspeção existentes não são afetados.');
+  if (!ok) return;
+  await db.operadores.delete(id); await refreshCaches(); toast('Operador excluído.', 'ok'); renderOperadores();
+}
+
+/* ---- Defeitos ---- */
+async function renderDefeitos() {
+  const busca = ($('cd-busca').value || '').toLowerCase();
+  let rows = await db.defeitosCatalogo.orderBy('nome').toArray();
+  if (busca) rows = rows.filter(d => d.nome.toLowerCase().includes(busca));
+  $('cd-tbody').innerHTML = rows.length ? rows.map(d => `<tr>
+    <td>${esc(d.nome)}</td>
+    <td class="actions"><button class="btn sm sec" onclick="editarDefeito(${d.id})">Editar</button> <button class="btn sm danger" onclick="excluirDefeito(${d.id})">Excluir</button></td>
+  </tr>`).join('') : '<tr><td colspan="2" class="empty">Nenhum defeito cadastrado.</td></tr>';
+}
+$('cd-busca').addEventListener('input', renderDefeitos);
+$('cd-novo').addEventListener('click', async () => {
+  const r = await openModal('Novo defeito', `<div class="field"><label>Nome do defeito *</label><input data-f="nome"></div>`,
+    [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.nome.trim()) { toast('Nome é obrigatório.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.defeitosCatalogo.add({ nome: r.dados.nome.trim() }); toast('Defeito cadastrado.', 'ok'); renderDefeitos(); }
+  catch { toast('Este defeito já existe.', 'err'); }
+});
+async function editarDefeito(id) {
+  const d = await db.defeitosCatalogo.get(id); if (!d) return;
+  const r = await openModal('Editar defeito', `<div class="field"><label>Nome do defeito *</label><input data-f="nome" value="${esc(d.nome)}"></div>`,
+    [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: v => { if (!v.nome.trim()) { toast('Nome é obrigatório.', 'err'); return false; } return true; } }]);
+  if (r.acao !== 'ok') return;
+  try { await db.defeitosCatalogo.update(id, { nome: r.dados.nome.trim() }); toast('Defeito atualizado.', 'ok'); renderDefeitos(); }
+  catch { toast('Este defeito já existe.', 'err'); }
+}
+async function excluirDefeito(id) {
+  const ok = await confirmar('Excluir defeito', 'Excluir este defeito do catálogo? Os registros de inspeção existentes não são afetados.');
+  if (!ok) return;
+  await db.defeitosCatalogo.delete(id); toast('Defeito excluído.', 'ok'); renderDefeitos();
+}
+
+/* =====================================================================
+   CONFIGURAÇÕES
+===================================================================== */
+$('cfg-salvar').addEventListener('click', async () => {
+  const v = Number($('cfg-meta').value);
+  if (isNaN(v) || v < 0) return toast('Informe uma meta válida.', 'err');
+  await db.config.put({ chave: 'metaPct', valor: v });
+  metaPct = v;
+  toast(`Meta salva: ${fmtPct(v)}.`, 'ok');
+});
+$('cfg-limpar-insp').addEventListener('click', async () => {
+  const n = await db.inspecoes.count();
+  const ok = await confirmar('Apagar dados de inspeção', `Apagar <b>${fmtInt(n)}</b> registro(s) de inspeção? Cadastros e configurações são preservados. Esta ação não pode ser desfeita.`);
+  if (!ok) return;
+  await db.inspecoes.clear(); await refreshCaches();
+  toast('Dados de inspeção apagados.', 'ok');
+});
+$('cfg-limpar-tudo').addEventListener('click', async () => {
+  const ok = await confirmar('Apagar toda a base', 'Apagar <b>TODOS</b> os dados: inspeções, produtos, operadores, defeitos, De→Para e configurações. Esta ação não pode ser desfeita.');
+  if (!ok) return;
+  await Promise.all([db.inspecoes.clear(), db.produtos.clear(), db.operadores.clear(), db.defeitosCatalogo.clear(), db.deParaDefeitos.clear(), db.config.clear()]);
+  await refreshCaches();
+  toast('Base apagada.', 'ok');
+});
+
+/* =====================================================================
+   BOOT
+===================================================================== */
+(async function boot() {
+  if (window.ChartDataLabels) Chart.register(ChartDataLabels);
+  Chart.defaults.font.family = "'IBM Plex Sans', sans-serif";
+  Chart.defaults.color = '#7B849A';
+  Chart.defaults.plugins.datalabels = Chart.defaults.plugins.datalabels || {};
+  Chart.defaults.plugins.datalabels.display = false;
+  await refreshCaches();
+  initDash1();
+})();
+</script>
+</body>
+</html>
