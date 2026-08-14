@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.7</title>
+<title>Firewall Management V1.8</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -124,7 +124,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.7</small>
+    <small>MANAGEMENT · V1.8</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -209,7 +209,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
     <div class="field" style="min-width:230px"><label>Produto</label><select id="d1-codigo"></select></div>
     <div class="field" style="min-width:190px"><label>Buscar código / descrição</label><input type="text" id="d1-busca-codigo" placeholder="Filtra a lista acima…"></div>
     <div class="field" style="min-width:140px"><label>Operador (matrícula)</label><input type="text" id="d1-operador" class="mono" placeholder="Todos"></div>
-    <div class="field" style="min-width:130px"><label>Modo dos gráficos</label><select id="d1-modo"><option value="pct" selected>Percentual</option><option value="qtd">Quantidade</option></select></div>
+    <div class="field" style="min-width:150px"><label>Modo dos gráficos</label><select id="d1-modo"><option value="pct" selected>Percentual</option><option value="qtd">Quantidade de peças</option><option value="ocor">Ocorrências</option></select></div>
     <div class="field" style="min-width:110px"><label>Exibir top</label><select id="d1-topn"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="0">Todos</option></select></div>
     <button class="btn" id="d1-aplicar">Aplicar</button>
     <button class="btn sec" id="d1-limpar">Limpar Filtro</button>
@@ -361,7 +361,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.7 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.8 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -799,26 +799,29 @@ function codN(r) {
 const TURNOS_EXCLUIR_PARETO = new Set(['demitido', '?']);
 
 function agrupa(rows) {
-  /* retorna {insp, def, porDefeito:Map, porDia:Map, porCodigo:Map, porTurno:Map, porOperador:Map} */
-  const g = { insp: 0, def: 0, porDefeito: new Map(), porDia: new Map(), porCodigo: new Map(), porTurno: new Map(), porOperador: new Map() };
+  /* retorna {insp, def, ocorDef, porDefeito:Map, porDia:Map, porCodigo:Map, porTurno:Map, porOperador:Map}
+     cada bucket (porDia/porCodigo/porTurno/porOperador) tem {insp, def, ocorDef} —
+     ocorDef = nº de REGISTROS de defeito (1 linha = 1 ocorrência, independente da quantidade). */
+  const g = { insp: 0, def: 0, ocorDef: 0, porDefeito: new Map(), porDia: new Map(), porCodigo: new Map(), porTurno: new Map(), porOperador: new Map() };
   for (const r of rows) {
     const q = Number(r.quantidade) || 0;
     const dn = normDefeito(r.defeito);
     const ehInsp = isInspecao(dn);
     const cod = codN(r);
-    const bump = (map, key, campo) => {
-      let o = map.get(key); if (!o) { o = { insp: 0, def: 0 }; map.set(key, o); }
+    const bump = (map, key, campo, contaOcorrencia) => {
+      let o = map.get(key); if (!o) { o = { insp: 0, def: 0, ocorDef: 0 }; map.set(key, o); }
       o[campo] += q;
+      if (contaOcorrencia) o.ocorDef += 1;
     };
     if (ehInsp) {
       g.insp += q;
       bump(g.porDia, r.data, 'insp'); bump(g.porCodigo, cod, 'insp');
       bump(g.porTurno, r.turno || 'Sem Classificação', 'insp'); bump(g.porOperador, r.codOperador, 'insp');
     } else {
-      g.def += q;
+      g.def += q; g.ocorDef += 1;
       g.porDefeito.set(dn, (g.porDefeito.get(dn) || 0) + q);
-      bump(g.porDia, r.data, 'def'); bump(g.porCodigo, cod, 'def');
-      bump(g.porTurno, r.turno || 'Sem Classificação', 'def'); bump(g.porOperador, r.codOperador, 'def');
+      bump(g.porDia, r.data, 'def', true); bump(g.porCodigo, cod, 'def', true);
+      bump(g.porTurno, r.turno || 'Sem Classificação', 'def', true); bump(g.porOperador, r.codOperador, 'def', true);
     }
   }
   return g;
@@ -1007,18 +1010,20 @@ async function renderDash1() {
     <div class="kpi"><div class="lab">PPM</div><div class="val">${fmtInt(Math.round(ppm))}</div></div>`;
 
   /* Gráfico 1: histórico do ano (Jan–Dez) — área cinza (peças inspecionadas) ao fundo,
-     linha de % (ou quantidade, conforme Modo) à frente. Meses sem inspeção não geram ponto (nunca 0%).
+     linha de %/quantidade/ocorrências (conforme Modo) à frente. Meses sem inspeção não geram ponto (nunca 0%).
      Não é afetado pelo filtro de Dia (é uma visão mensal do ano inteiro). */
   const meses12 = mesesDoAno(ano);
   const gPorMes = meses12.map(j => agrupa(rowsAno.filter(r => r.anoMes === j.anoMes)));
-  const valMes = g => g.insp > 0 ? (modo === 'qtd' ? g.def : pct(g.def, g.insp)) : null;
+  const valMes = g => g.insp > 0 ? (modo === 'qtd' ? g.def : modo === 'ocor' ? g.ocorDef : pct(g.def, g.insp)) : null;
+  const labelPrincipal = modo === 'qtd' ? 'Quantidade de defeitos' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
+  const fmtModo = v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v);
   const dsHistorico = [
     { type: 'line', label: 'Peças inspecionadas', data: gPorMes.map(g => g.insp), yAxisID: 'yPct2',
       borderColor: 'transparent', backgroundColor: 'rgba(139,149,176,.28)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
-    { type: 'line', label: modo === 'qtd' ? 'Quantidade de defeitos' : '% peças com defeito', data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
+    { type: 'line', label: labelPrincipal, data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
       borderColor: '#3A6EF0', backgroundColor: '#3A6EF0', borderWidth: 2, pointRadius: 3, tension: .25, order: 2,
-      datalabels: { display: true, align: 'top', offset: 4, formatter: v => v == null ? '' : (modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1)), color: '#1A1F2E', font: { size: 9, weight: 600 } } }
+      datalabels: { display: true, align: 'top', offset: 4, formatter: v => v == null ? '' : fmtModo(v), color: '#1A1F2E', font: { size: 9, weight: 600 } } }
   ];
   if (modo === 'pct') dsHistorico.push({ type: 'line', label: `Meta (${fmtPct(metaPct)})`, data: meses12.map(() => metaPct), yAxisID: 'yPct',
     borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, order: 1, datalabels: { display: false } });
@@ -1028,9 +1033,9 @@ async function renderDash1() {
       interaction: { mode: 'index', intersect: false },
       onClick: (evt, elements) => { if (!elements.length) return; const mesClicado = meses12[elements[0].index].mes; if (Number($('d1-mes').value) === mesClicado) return; $('d1-mes').value = mesClicado; renderDash1(); },
       onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : (modo === 'qtd' ? fmtInt(c.parsed.y) : fmtPct(c.parsed.y))) } } },
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtModo(c.parsed.y)) } } },
       scales: {
-        yPct: { beginAtZero: true, position: 'left', ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } },
+        yPct: { beginAtZero: true, position: 'left', ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } },
         yPct2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
       } }
   });
@@ -1043,14 +1048,16 @@ async function renderDash1() {
   for (let d = 1; d <= nd; d++) {
     const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const o = gDiaFull.porDia.get(iso);
-    diasArr.push({ dia: d, insp: o ? o.insp : 0, def: o ? o.def : 0, val: o ? (modo === 'qtd' ? o.def : pct(o.def, o.insp)) : null });
+    const val = o ? (modo === 'qtd' ? o.def : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp)) : null;
+    diasArr.push({ dia: d, insp: o ? o.insp : 0, def: o ? o.def : 0, ocorDef: o ? o.ocorDef : 0, val });
   }
+  const labelDiario = modo === 'qtd' ? 'Defeitos por dia' : modo === 'ocor' ? 'Ocorrências por dia' : '% rejeição diária';
   const corPonto = d => d === filtroDia ? '#D4A017' : '#3A6EF0';
   const dsDiario = [
-    { label: modo === 'qtd' ? 'Defeitos por dia' : '% rejeição diária', data: diasArr.map(x => x.val), spanGaps: false,
+    { label: labelDiario, data: diasArr.map(x => x.val), spanGaps: false,
       borderColor: '#3A6EF0', backgroundColor: '#3A6EF0',
       pointBackgroundColor: diasArr.map(x => corPonto(x.dia)), pointRadius: diasArr.map(x => x.dia === filtroDia ? 6 : 3), borderWidth: 2, tension: .2,
-      datalabels: { display: true, align: 'top', offset: 3, formatter: v => v == null ? '' : (modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1)), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
+      datalabels: { display: true, align: 'top', offset: 3, formatter: v => v == null ? '' : fmtModo(v), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
   ];
   if (modo === 'pct') dsDiario.push({ label: `Meta (${fmtPct(metaPct)})`, data: diasArr.map(() => metaPct),
     borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, datalabels: { display: false } });
@@ -1060,43 +1067,49 @@ async function renderDash1() {
     options: { responsive: true, maintainAspectRatio: false,
       onClick: (evt, elements) => { if (!elements.length) return; filtrarPorDia(diasArr[elements[0].index].dia); },
       onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (c.parsed.y == null ? 'Sem inspeção' : (modo === 'qtd' ? fmtInt(c.parsed.y) + ' defeito(s)' : fmtPct(c.parsed.y)) + ` (${fmtInt(diasArr[c.dataIndex].def)}/${fmtInt(diasArr[c.dataIndex].insp)})`) } } },
-      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } } } }
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (c.parsed.y == null ? 'Sem inspeção' : (modo === 'pct' ? fmtPct(c.parsed.y) : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s)' : ' defeito(s)')) + ` (${fmtInt(diasArr[c.dataIndex].def)}/${fmtInt(diasArr[c.dataIndex].insp)})`) } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
   });
 
   /* Pareto de Produtos, por Operador e de Defeitos — barras empilhadas por Turno (T1/T2/T3 + Outros),
-     como no Scrap Manager. O clique (Produtos/Defeitos) continua filtrando o dashboard. */
+     como no Scrap Manager. Em modo Ocorrências, cada barra conta REGISTROS de defeito (1 por linha),
+     não a soma de peças. O clique (Produtos/Defeitos) continua filtrando o dashboard. */
+  const porOcorrencia = modo === 'ocor';
+  const tituloEixoYParetos = porOcorrencia ? 'Ocorrências' : 'Quantidade';
   const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
-  const porProdTurno = agrupaTurnoPorChave(effectiveRows, r => codN(r));
-  desenharParetoEmpilhado('d2-chart-prod', porProdTurno, topN, { mapLabel: c => prodsMap.get(c), onBarClick: filtrarPorProduto });
+  const porProdTurno = agrupaTurnoPorChave(effectiveRows, r => codN(r), porOcorrencia);
+  desenharParetoEmpilhado('d2-chart-prod', porProdTurno, topN, { mapLabel: c => prodsMap.get(c), onBarClick: filtrarPorProduto, tituloEixoY: tituloEixoYParetos });
 
-  const porOperTurno = agrupaTurnoPorChave(effectiveRows, r => r.codOperador);
+  const porOperTurno = agrupaTurnoPorChave(effectiveRows, r => r.codOperador, porOcorrencia);
   desenharParetoEmpilhado('d2-chart-oper', porOperTurno, topN, {
     xLabel: mat => `${mat}-${turnoAbrev((operMap.get(String(mat).trim()) || {}).turno)}`,
-    tooltipTitle: mat => (operMap.get(String(mat).trim()) || {}).nome || mat
+    tooltipTitle: mat => (operMap.get(String(mat).trim()) || {}).nome || mat,
+    tituloEixoY: tituloEixoYParetos
   });
 
-  const porDefeitoTurno = agrupaTurnoPorChave(effectiveRows, r => normDefeito(r.defeito));
-  desenharParetoEmpilhado('d1-chart-pareto', porDefeitoTurno, topN, { onBarClick: filtrarPorDefeito });
+  const porDefeitoTurno = agrupaTurnoPorChave(effectiveRows, r => normDefeito(r.defeito), porOcorrencia);
+  desenharParetoEmpilhado('d1-chart-pareto', porDefeitoTurno, topN, { onBarClick: filtrarPorDefeito, tituloEixoY: tituloEixoYParetos });
 
-  /* Pareto por Turno — Modo Percentual: % peças com defeito (rejeição) por turno.
-     Modo Quantidade: soma de peças inspecionadas por turno. "Demitido" e "?" ocultos aqui. Não é empilhado (já é a própria quebra por turno). */
+  /* Pareto por Turno — Percentual: % peças com defeito (rejeição) por turno.
+     Quantidade: soma de peças inspecionadas por turno. Ocorrências: nº de registros de defeito por turno.
+     "Demitido" e "?" ocultos aqui. Não é empilhado (já é a própria quebra por turno). */
   const ordemT = ['1º Turno', '2º Turno', '3º Turno'];
   const turnos = [...gMes.porTurno.entries()]
     .filter(([t]) => !TURNOS_EXCLUIR_PARETO.has(String(t).trim().toLowerCase()))
     .sort((a, b) => { const ia = ordemT.indexOf(a[0]), ib = ordemT.indexOf(b[0]); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
   const corT = t => t.startsWith('1') ? '#4F7CFF' : t.startsWith('2') ? '#22C997' : t.startsWith('3') ? '#F5A623' : '#8A97A3';
-  const valorTurno = o => modo === 'qtd' ? o.insp : pct(o.def, o.insp);
+  const valorTurno = o => modo === 'qtd' ? o.insp : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp);
+  const labelTurno = modo === 'qtd' ? 'Peças inspecionadas' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
   renderChart('d2-chart-turno', {
     type: 'bar',
     data: {
       labels: turnos.map(([t]) => t),
-      datasets: [{ label: modo === 'qtd' ? 'Peças inspecionadas' : '% peças com defeito', data: turnos.map(([, o]) => valorTurno(o)), backgroundColor: turnos.map(([t]) => corT(t)), borderRadius: 4, maxBarThickness: 80,
-        datalabels: { display: true, anchor: 'end', align: 'top', formatter: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1), color: '#1A1F2E', font: { size: 11, weight: 600 } } }]
+      datasets: [{ label: labelTurno, data: turnos.map(([, o]) => valorTurno(o)), backgroundColor: turnos.map(([t]) => corT(t)), borderRadius: 4, maxBarThickness: 80,
+        datalabels: { display: true, anchor: 'end', align: 'top', formatter: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v), color: '#1A1F2E', font: { size: 11, weight: 600 } } }]
     },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => modo === 'qtd' ? fmtInt(c.parsed.y) + ' peça(s) inspecionada(s)' : fmtPct(c.parsed.y) + ` (${fmtInt(turnos[c.dataIndex][1].def)} def / ${fmtInt(turnos[c.dataIndex][1].insp)} insp)` } } },
-      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'qtd' ? fmtInt(v) : fmtPct(v, 1) } } } }
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => modo === 'pct' ? fmtPct(c.parsed.y) + ` (${fmtInt(turnos[c.dataIndex][1].def)} def / ${fmtInt(turnos[c.dataIndex][1].insp)} insp)` : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s) de defeito' : ' peça(s) inspecionada(s)') } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
   });
 
   /* Tabela Operador/Turno — Taxa de Aderência = defeitos / inspecionadas (ordenável) */
@@ -1135,7 +1148,7 @@ function renderTabelaOperador() {
 
 /* Agrupa a quantidade de DEFEITOS (ignora linhas "Inspeção") por uma chave (produto/operador/defeito),
    quebrando por turno T1/T2/T3 + "Outros" (ADM, Sem Classificação, Demitido, "?"). */
-function agrupaTurnoPorChave(rows, chaveFn) {
+function agrupaTurnoPorChave(rows, chaveFn, porOcorrencia = false) {
   const m = new Map();
   for (const r of rows) {
     const dn = normDefeito(r.defeito);
@@ -1143,10 +1156,10 @@ function agrupaTurnoPorChave(rows, chaveFn) {
     const chave = chaveFn(r);
     if (!chave) continue;
     let o = m.get(chave); if (!o) { o = { T1: 0, T2: 0, T3: 0, Outros: 0, total: 0 }; m.set(chave, o); }
-    const q = Number(r.quantidade) || 0;
+    const valor = porOcorrencia ? 1 : (Number(r.quantidade) || 0);
     const t = String(r.turno || '').trim();
     const bucket = t.startsWith('1') ? 'T1' : t.startsWith('2') ? 'T2' : t.startsWith('3') ? 'T3' : 'Outros';
-    o[bucket] += q; o.total += q;
+    o[bucket] += valor; o.total += valor;
   }
   return m;
 }
@@ -1157,7 +1170,7 @@ function agrupaTurnoPorChave(rows, chaveFn) {
    opts.tooltipTitle(chave): sobrescreve o título do tooltip (ex.: nome completo do operador/produto).
    opts.onBarClick(chave): torna as barras clicáveis (cursor pointer + callback). */
 function desenharParetoEmpilhado(canvasId, mapa, topN, opts = {}) {
-  const { mapLabel = null, xLabel = null, tooltipTitle = null, onBarClick = null } = opts;
+  const { mapLabel = null, xLabel = null, tooltipTitle = null, onBarClick = null, tituloEixoY = 'Quantidade' } = opts;
   let itens = [...mapa.entries()].sort((a, b) => b[1].total - a[1].total);
   const totalGeral = itens.reduce((s, [, v]) => s + v.total, 0);
   if (topN > 0) itens = itens.slice(0, topN);
@@ -1198,7 +1211,7 @@ function desenharParetoEmpilhado(canvasId, mapa, topN, opts = {}) {
       },
       scales: {
         x: { stacked: true, ticks: { maxRotation: 60, minRotation: 30, font: { size: 10.5 } } },
-        y: { stacked: true, beginAtZero: true, suggestedMax: maxYComRespiro, position: 'left', title: { display: true, text: 'Quantidade' } },
+        y: { stacked: true, beginAtZero: true, suggestedMax: maxYComRespiro, position: 'left', title: { display: true, text: tituloEixoY } },
         y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
       } }
   });
