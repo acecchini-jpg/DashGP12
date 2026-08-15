@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.9</title>
+<title>Firewall Management V1.10</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -26,6 +27,15 @@
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px}
 /* ---------- Layout ---------- */
 #app{display:flex;min-height:100vh}
+#auth-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200}
+#auth-gate.hidden{display:none}
+#auth-box{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 40px rgba(23,33,43,.12);padding:32px 30px;width:min(360px,90vw)}
+#auth-box h1{font-size:17px;font-weight:700;letter-spacing:.05em;color:var(--accent);margin-bottom:2px}
+#auth-box h1 span{display:block;font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--muted);margin-top:2px}
+#auth-box .field{margin-bottom:14px}
+.userbar{padding:10px 14px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.userbar .quem{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.userbar button{font-size:11.5px;padding:4px 9px;flex-shrink:0}
 aside{width:224px;background:var(--surface);border-right:1px solid var(--line);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}
 .brand{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
 .brand h1{font-size:15px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
@@ -120,28 +130,43 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 </style>
 </head>
 <body>
+<div id="auth-gate">
+  <div id="auth-box">
+    <h1>FIREWALL <span>MANAGEMENT</span></h1>
+    <p class="muted" style="font-size:12.5px;margin-bottom:18px">Entre com seu e-mail e senha para continuar.</p>
+    <div class="field"><label>E-mail</label><input type="text" id="auth-email" autocomplete="username"></div>
+    <div class="field"><label>Senha</label><input type="password" id="auth-senha" autocomplete="current-password"></div>
+    <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
+    <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
+  </div>
+</div>
 <div id="app">
+
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.9</small>
+    <small>MANAGEMENT · V1.10</small>
   </div>
   <div class="hazard"></div>
   <nav>
     <div class="nav-sec">Análise</div>
     <button class="nav-item active" data-page="dash-produto"><span class="ico">▤</span>Dashboard</button>
-    <button class="nav-item" data-page="comparacao"><span class="ico">⇄</span>Comparação Action Plan</button>
-    <div class="nav-sec">Operação</div>
-    <button class="nav-item" data-page="digitacao"><span class="ico">⌨</span>Digitação Rápida</button>
-    <button class="nav-item" data-page="importacao"><span class="ico">⇪</span>Importação</button>
-    <div class="nav-sec">Cadastros</div>
-    <button class="nav-item" data-page="cad-produtos"><span class="ico">◧</span>Produtos (Matriz N)</button>
-    <button class="nav-item" data-page="cad-operadores"><span class="ico">◉</span>Operadores</button>
-    <button class="nav-item" data-page="cad-defeitos"><span class="ico">✕</span>Defeitos</button>
-    <div class="nav-sec">Sistema</div>
-    <button class="nav-item" data-page="config"><span class="ico">⚙</span>Configurações</button>
+    <button class="nav-item nivel1-only" data-page="comparacao"><span class="ico">⇄</span>Comparação Action Plan</button>
+    <div class="nav-sec nivel1-only" id="nav-sec-operacao">Operação</div>
+    <button class="nav-item nivel1-only" data-page="digitacao"><span class="ico">⌨</span>Digitação Rápida</button>
+    <button class="nav-item nivel1-only" data-page="importacao"><span class="ico">⇪</span>Importação</button>
+    <div class="nav-sec nivel1-only" id="nav-sec-cadastros">Cadastros</div>
+    <button class="nav-item nivel1-only" data-page="cad-produtos"><span class="ico">◧</span>Produtos (Matriz N)</button>
+    <button class="nav-item nivel1-only" data-page="cad-operadores"><span class="ico">◉</span>Operadores</button>
+    <button class="nav-item nivel1-only" data-page="cad-defeitos"><span class="ico">✕</span>Defeitos</button>
+    <div class="nav-sec nivel1-only" id="nav-sec-sistema">Sistema</div>
+    <button class="nav-item nivel1-only" data-page="config"><span class="ico">⚙</span>Configurações</button>
   </nav>
   <div class="db-status" id="db-status">IndexedDB · —</div>
+  <div class="userbar">
+    <span class="quem" id="auth-quem"></span>
+    <button class="btn sm sec" id="auth-sair">Sair</button>
+  </div>
 </aside>
 
 <main>
@@ -361,7 +386,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.9 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.10 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -511,10 +536,84 @@ function confirmar(titulo, msg) {
 }
 
 /* =====================================================================
+   AUTENTICAÇÃO (Supabase) — 2 níveis
+   Nível 1: acesso completo. Nível 2: acesso somente ao Dashboard.
+   IMPORTANTE: os dados de inspeção continuam 100% no IndexedDB local —
+   o Supabase aqui só cuida de login e do nível de cada usuário. Por isso
+   a restrição do nível 2 é uma restrição de INTERFACE, não uma barreira
+   de segurança de dados (quem souber abrir o console do navegador ainda
+   vê o IndexedDB local, de qualquer nível). Segurança de dados de verdade
+   só existe quando os dados também morarem no Supabase, com RLS por nível.
+   ===================================================================== */
+const SUPABASE_URL = 'COLE_AQUI_A_URL_DO_SEU_PROJETO_SUPABASE';
+const SUPABASE_ANON_KEY = 'COLE_AQUI_A_ANON_KEY_DO_SEU_PROJETO_SUPABASE';
+let supa = null;
+let usuarioAtual = null;   // { id, email }
+let nivelUsuario = null;   // 1 ou 2
+
+function authConfigurado() {
+  return SUPABASE_URL.startsWith('http') && !SUPABASE_ANON_KEY.startsWith('COLE_AQUI');
+}
+
+async function authInit() {
+  if (!authConfigurado()) {
+    $('auth-status').innerHTML = '<span style="color:var(--danger)">Supabase ainda não configurado neste arquivo (SUPABASE_URL / SUPABASE_ANON_KEY). Peça o passo a passo de configuração.</span>';
+    $('auth-entrar').disabled = true;
+    return;
+  }
+  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  $('auth-entrar').addEventListener('click', authEntrar);
+  $('auth-senha').addEventListener('keydown', e => { if (e.key === 'Enter') authEntrar(); });
+  $('auth-sair').addEventListener('click', authSair);
+
+  const { data: { session } } = await supa.auth.getSession();
+  if (session?.user) { await authAposLogin(session.user); }
+}
+
+async function authEntrar() {
+  const email = $('auth-email').value.trim(), senha = $('auth-senha').value;
+  if (!email || !senha) { $('auth-status').textContent = 'Preencha e-mail e senha.'; return; }
+  $('auth-status').textContent = 'Entrando…';
+  const { data, error } = await supa.auth.signInWithPassword({ email, password: senha });
+  if (error) { $('auth-status').innerHTML = `<span style="color:var(--danger)">${error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : error.message}</span>`; return; }
+  $('auth-senha').value = '';
+  await authAposLogin(data.user);
+}
+
+async function authAposLogin(user) {
+  $('auth-status').textContent = 'Carregando perfil…';
+  const { data: perfil, error } = await supa.from('perfis').select('nivel').eq('id', user.id).single();
+  if (error || !perfil) {
+    $('auth-status').innerHTML = '<span style="color:var(--danger)">Login ok, mas este usuário ainda não tem perfil/nível cadastrado no Supabase. Peça para um administrador cadastrar.</span>';
+    await supa.auth.signOut();
+    return;
+  }
+  usuarioAtual = { id: user.id, email: user.email };
+  nivelUsuario = Number(perfil.nivel);
+  authAplicarNivel(nivelUsuario);
+  $('auth-quem').textContent = `${user.email} · Nível ${nivelUsuario}`;
+  $('auth-quem').title = user.email;
+  $('auth-gate').classList.add('hidden');
+  await iniciarAppPosLogin();
+}
+
+function authAplicarNivel(nivel) {
+  document.querySelectorAll('.nivel1-only').forEach(el => { el.style.display = nivel === 1 ? '' : 'none'; });
+}
+
+async function authSair() {
+  try { await supa.auth.signOut(); } catch (e) {}
+  usuarioAtual = null; nivelUsuario = null;
+  $('auth-email').value = ''; $('auth-senha').value = ''; $('auth-status').textContent = '';
+  $('auth-gate').classList.remove('hidden');
+}
+
+/* =====================================================================
    NAVEGAÇÃO
 ===================================================================== */
 document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => showPage(btn.dataset.page)));
 function showPage(id) {
+  if (nivelUsuario === 2 && id !== 'dash-produto') id = 'dash-produto';
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === id));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
   if (id === 'digitacao') initDigitacao();
@@ -1581,9 +1680,12 @@ $('cfg-limpar-tudo').addEventListener('click', async () => {
   Chart.defaults.color = '#7B849A';
   Chart.defaults.plugins.datalabels = Chart.defaults.plugins.datalabels || {};
   Chart.defaults.plugins.datalabels.display = false;
-  await refreshCaches();
-  initDash1();
+  await authInit();   // mostra a tela de login; só chama iniciarAppPosLogin() depois de autenticado
 })();
+async function iniciarAppPosLogin() {
+  await refreshCaches();
+  showPage('dash-produto');
+}
 </script>
 </body>
 </html>
