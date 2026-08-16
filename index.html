@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.11</title>
+<title>Firewall Management V1.12</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.11</small>
+    <small>MANAGEMENT · V1.12</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -386,7 +386,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.11 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.12 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1126,10 +1126,10 @@ async function renderDash1() {
   const insp245PorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() === '245')));
   const inspOutrosPorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() !== '245')));
   const dsHistorico = [
-    { type: 'line', label: 'Peças inspecionadas — Inspetor 245', data: insp245PorMes, yAxisID: 'yPct2', stack: 'insp',
+    { type: 'line', label: 'Amostragem', data: insp245PorMes, yAxisID: 'yPct2', stack: 'insp',
       borderColor: 'transparent', backgroundColor: 'rgba(79,124,255,.38)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
-    { type: 'line', label: 'Peças inspecionadas — Demais inspetores', data: inspOutrosPorMes, yAxisID: 'yPct2', stack: 'insp',
+    { type: 'line', label: 'Peças Inspecionadas', data: inspOutrosPorMes, yAxisID: 'yPct2', stack: 'insp',
       borderColor: 'transparent', backgroundColor: 'rgba(139,149,176,.28)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
     { type: 'line', label: labelPrincipal, data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
