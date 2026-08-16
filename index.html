@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.10</title>
+<title>Firewall Management V1.11</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.10</small>
+    <small>MANAGEMENT · V1.11</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -243,7 +243,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
   <div class="grid c4" id="d1-kpis"></div>
   <div class="grid c2" style="margin-top:16px">
     <div class="card"><h3>% peças com defeito vs. Meta — ano selecionado</h3><div class="chart-box"><canvas id="d1-chart-meta"></canvas></div></div>
-    <div class="card"><h3>% rejeição diária — mês selecionado</h3><div class="chart-box"><canvas id="d1-chart-dia"></canvas><p id="d1-dia-vazio" class="empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center">Selecione um mês para ver o detalhamento diário.</p></div></div>
+    <div class="card"><h3 id="d1-titulo-dia">% rejeição diária — mês selecionado</h3><div class="chart-box"><canvas id="d1-chart-dia"></canvas></div></div>
   </div>
   <div class="grid c2">
     <div class="card"><h3>Pareto de Produtos</h3><div class="chart-box tall"><canvas id="d2-chart-prod"></canvas></div></div>
@@ -386,7 +386,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.10 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.11 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -898,10 +898,10 @@ function codN(r) {
 const TURNOS_EXCLUIR_PARETO = new Set(['demitido', '?']);
 
 function agrupa(rows) {
-  /* retorna {insp, def, ocorDef, porDefeito:Map, porDia:Map, porCodigo:Map, porTurno:Map, porOperador:Map}
-     cada bucket (porDia/porCodigo/porTurno/porOperador) tem {insp, def, ocorDef} —
+  /* retorna {insp, def, ocorDef, porDefeito:Map, porDia:Map, porSemana:Map, porCodigo:Map, porTurno:Map, porOperador:Map}
+     cada bucket (porDia/porSemana/porCodigo/porTurno/porOperador) tem {insp, def, ocorDef} —
      ocorDef = nº de REGISTROS de defeito (1 linha = 1 ocorrência, independente da quantidade). */
-  const g = { insp: 0, def: 0, ocorDef: 0, porDefeito: new Map(), porDia: new Map(), porCodigo: new Map(), porTurno: new Map(), porOperador: new Map() };
+  const g = { insp: 0, def: 0, ocorDef: 0, porDefeito: new Map(), porDia: new Map(), porSemana: new Map(), porCodigo: new Map(), porTurno: new Map(), porOperador: new Map() };
   for (const r of rows) {
     const q = Number(r.quantidade) || 0;
     const dn = normDefeito(r.defeito);
@@ -914,12 +914,12 @@ function agrupa(rows) {
     };
     if (ehInsp) {
       g.insp += q;
-      bump(g.porDia, r.data, 'insp'); bump(g.porCodigo, cod, 'insp');
+      bump(g.porDia, r.data, 'insp'); bump(g.porSemana, r.semana, 'insp'); bump(g.porCodigo, cod, 'insp');
       bump(g.porTurno, r.turno || 'Sem Classificação', 'insp'); bump(g.porOperador, r.codOperador, 'insp');
     } else {
       g.def += q; g.ocorDef += 1;
       g.porDefeito.set(dn, (g.porDefeito.get(dn) || 0) + q);
-      bump(g.porDia, r.data, 'def', true); bump(g.porCodigo, cod, 'def', true);
+      bump(g.porDia, r.data, 'def', true); bump(g.porSemana, r.semana, 'def', true); bump(g.porCodigo, cod, 'def', true);
       bump(g.porTurno, r.turno || 'Sem Classificação', 'def', true); bump(g.porOperador, r.codOperador, 'def', true);
     }
   }
@@ -1112,16 +1112,24 @@ async function renderDash1() {
     <div class="kpi"><div class="lab">% peças com defeito</div><div class="val ${pctAtual <= metaPct ? 'ok' : 'bad'}">${fmtPct(pctAtual)}</div></div>
     <div class="kpi"><div class="lab">PPM</div><div class="val">${fmtInt(Math.round(ppm))}</div></div>`;
 
-  /* Gráfico 1: histórico do ano (Jan–Dez) — área cinza (peças inspecionadas) ao fundo,
-     linha de %/quantidade/ocorrências (conforme Modo) à frente. Meses sem inspeção não geram ponto (nunca 0%).
+  /* Gráfico 1: histórico do ano (Jan–Dez) — área de peças inspecionadas ao fundo, dividida em 2 faixas
+     empilhadas (Inspetor 245 x Demais inspetores — juntas somam o mesmo total de antes), linha de
+     %/quantidade/ocorrências (conforme Modo) à frente. Meses sem inspeção não geram ponto (nunca 0%).
      Não é afetado pelo filtro de Dia (é uma visão mensal do ano inteiro). */
   const meses12 = mesesDoAno(ano);
-  const gPorMes = meses12.map(j => agrupa(rowsAno.filter(r => r.anoMes === j.anoMes)));
+  const rowsPorMes = meses12.map(j => rowsAno.filter(r => r.anoMes === j.anoMes));
+  const gPorMes = rowsPorMes.map(rs => agrupa(rs));
   const valMes = g => g.insp > 0 ? (modo === 'qtd' ? g.def : modo === 'ocor' ? g.ocorDef : pct(g.def, g.insp)) : null;
   const labelPrincipal = modo === 'qtd' ? 'Quantidade de defeitos' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
   const fmtModo = v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v);
+  const somaInspecionadas = rows => rows.reduce((s, r) => isInspecao(normDefeito(r.defeito)) ? s + (Number(r.quantidade) || 0) : s, 0);
+  const insp245PorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() === '245')));
+  const inspOutrosPorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() !== '245')));
   const dsHistorico = [
-    { type: 'line', label: 'Peças inspecionadas', data: gPorMes.map(g => g.insp), yAxisID: 'yPct2',
+    { type: 'line', label: 'Peças inspecionadas — Inspetor 245', data: insp245PorMes, yAxisID: 'yPct2', stack: 'insp',
+      borderColor: 'transparent', backgroundColor: 'rgba(79,124,255,.38)', fill: true, tension: .3, pointRadius: 0, order: 0,
+      datalabels: { display: false } },
+    { type: 'line', label: 'Peças inspecionadas — Demais inspetores', data: inspOutrosPorMes, yAxisID: 'yPct2', stack: 'insp',
       borderColor: 'transparent', backgroundColor: 'rgba(139,149,176,.28)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
     { type: 'line', label: labelPrincipal, data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
@@ -1139,20 +1147,34 @@ async function renderDash1() {
       plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtModo(c.parsed.y)) } } },
       scales: {
         yPct: { beginAtZero: true, position: 'left', ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } },
-        yPct2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
+        yPct2: { stacked: true, beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
       } }
   });
 
   /* Gráfico 2: diário do mês selecionado — SEMPRE o mês inteiro (é o "seletor" do filtro de Dia).
      Sem dados = sem ponto, nunca 0%. Clique num dia filtra (toggle) o restante do dashboard.
-     Sem mês selecionado ("Ano inteiro"), não há como plotar por dia — mostra um aviso e não desenha. */
+     Sem mês selecionado ("Ano inteiro"), mostra por SEMANA (campo `semana`, já gravado em cada registro) em vez de por dia. */
   if (!mes) {
-    if (charts['d1-chart-dia']) { charts['d1-chart-dia'].destroy(); delete charts['d1-chart-dia']; }
-    $('d1-chart-dia').style.display = 'none';
-    $('d1-dia-vazio').style.display = 'flex';
+    $('d1-titulo-dia').textContent = '% rejeição semanal — ano inteiro';
+    const semanas = [...gMes.porSemana.entries()].filter(([s]) => !!s).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    const valSemana = o => modo === 'qtd' ? o.def : modo === 'ocor' ? o.ocorDef : pct(o.def, o.insp);
+    const labelSemanal = modo === 'qtd' ? 'Defeitos por semana' : modo === 'ocor' ? 'Ocorrências por semana' : '% rejeição semanal';
+    const dsSemanal = [
+      { label: labelSemanal, data: semanas.map(([, o]) => valSemana(o)),
+        borderColor: '#3A6EF0', backgroundColor: '#3A6EF0', pointRadius: 3, borderWidth: 2, tension: .2,
+        datalabels: { display: true, align: 'top', offset: 3, formatter: v => fmtModo(v), color: '#1A1F2E', font: { size: 8.5, weight: 600 } } }
+    ];
+    if (modo === 'pct') dsSemanal.push({ label: `Meta (${fmtPct(metaPct)})`, data: semanas.map(() => metaPct),
+      borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, datalabels: { display: false } });
+    renderChart('d1-chart-dia', {
+      type: 'line',
+      data: { labels: semanas.map(([s]) => s.replace('W', 'S')), datasets: dsSemanal },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? null : (modo === 'pct' ? fmtPct(c.parsed.y) : fmtInt(c.parsed.y) + (modo === 'ocor' ? ' ocorrência(s)' : ' defeito(s)')) + ` (${fmtInt(semanas[c.dataIndex][1].def)}/${fmtInt(semanas[c.dataIndex][1].insp)})` } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } } } }
+    });
   } else {
-    $('d1-chart-dia').style.display = 'block';
-    $('d1-dia-vazio').style.display = 'none';
+    $('d1-titulo-dia').textContent = '% rejeição diária — mês selecionado';
     const nd = diasDoMes(ano, mes);
     const gDiaFull = agrupa(rowsMesFull);
     const diasArr = [];
