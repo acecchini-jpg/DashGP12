@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.12</title>
+<title>Firewall Management V1.13</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,13 +145,14 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.12</small>
+    <small>MANAGEMENT · V1.13</small>
   </div>
   <div class="hazard"></div>
   <nav>
     <div class="nav-sec">Análise</div>
     <button class="nav-item active" data-page="dash-produto"><span class="ico">▤</span>Dashboard</button>
     <button class="nav-item nivel1-only" data-page="comparacao"><span class="ico">⇄</span>Comparação Action Plan</button>
+    <button class="nav-item nivel1-only" data-page="comp-scrap"><span class="ico">♻</span>Comparação Scrap IQ</button>
     <div class="nav-sec nivel1-only" id="nav-sec-operacao">Operação</div>
     <button class="nav-item nivel1-only" data-page="digitacao"><span class="ico">⌨</span>Digitação Rápida</button>
     <button class="nav-item nivel1-only" data-page="importacao"><span class="ico">⇪</span>Importação</button>
@@ -319,6 +320,56 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
   </div>
 </section>
 
+<!-- ================= COMPARAÇÃO SCRAP IQ ================= -->
+<section class="page" id="page-comp-scrap">
+  <div class="page-head"><h2>Comparação com Scrap IQ</h2><p>Cruza os dados de inspeção do Firewall (GP-12) com o refugo detalhado do Scrap IQ. A correspondência é feita pelo código de 7 dígitos e por data de produção dentro de uma janela de dias — os nomes de defeito não são padronizados entre os dois sistemas, então cada lado mostra sua própria descrição, sem tentar casar automaticamente.</p></div>
+
+  <div class="card" id="sq-login-card">
+    <h3>Conectar ao Scrap IQ</h3>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Use o mesmo e-mail e senha do Scrap IQ. É um projeto Supabase separado do usado para o login do Firewall — por isso pede uma conexão própria.</p>
+    <div class="row" style="max-width:520px;align-items:flex-end">
+      <div class="field"><label>E-mail</label><input type="text" id="sq-email" autocomplete="username"></div>
+      <div class="field"><label>Senha</label><input type="password" id="sq-senha" autocomplete="current-password"></div>
+      <button class="btn" id="sq-conectar">Conectar</button>
+    </div>
+    <p id="sq-login-status" class="muted" style="margin-top:10px;font-size:12.5px"></p>
+  </div>
+
+  <div id="sq-painel" style="display:none">
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span class="muted" style="font-size:12.5px" id="sq-conectado-como"></span>
+      <button class="btn sm sec" id="sq-desconectar">Desconectar</button>
+    </div>
+
+    <div class="filters">
+      <div class="field"><label>Ano</label><select id="sq-ano"></select></div>
+      <div class="field"><label>Mês</label><select id="sq-mes"></select></div>
+      <div class="field" style="min-width:110px"><label>Top N</label><select id="sq-topn"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="0">Todos</option></select></div>
+      <div class="field" style="min-width:150px"><label>Janela de correspondência</label><select id="sq-janela"><option value="3">± 3 dias</option><option value="7" selected>± 7 dias</option><option value="15">± 15 dias</option><option value="30">± 30 dias</option></select></div>
+      <div class="field" style="min-width:160px"><label>Métrica</label><select id="sq-metrica"><option value="qtd" selected>Quantidade absoluta</option><option value="pct">Percentual</option></select></div>
+      <button class="btn" id="sq-atualizar">Atualizar</button>
+    </div>
+
+    <div class="card">
+      <h3>Direção 1 — Top produtos do Firewall → há refugo correspondente no Scrap IQ?</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os produtos com mais defeitos no Firewall no período e verifica se o Scrap IQ registrou refugo para o mesmo código, dentro da janela de dias.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Código</th><th>Descrição</th><th class="num">Defeitos (Firewall)</th><th class="num">Refugo (Scrap IQ) — período</th><th>Principais defeitos (Scrap IQ)</th><th>Situação</th></tr></thead>
+        <tbody id="sq-tbl-d1"></tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>Direção 2 — Top produtos do Scrap IQ → foram apontados no Firewall?</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os produtos com mais refugo no Scrap IQ no período (por quantidade absoluta ou %, conforme a Métrica escolhida) e verifica se o Firewall também apontou defeito para o mesmo código, dentro da janela de dias. Quanto mais refugo, maior o risco de algum problema não ser visto no processo e acabar chegando ao Firewall.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Código</th><th>Descrição</th><th class="num">Refugo (Scrap IQ)</th><th>Principais defeitos (Scrap IQ)</th><th>Situação</th><th class="num">Defeitos correspondentes (Firewall)</th></tr></thead>
+        <tbody id="sq-tbl-d2"></tbody>
+      </table></div>
+    </div>
+  </div>
+</section>
+
 <!-- ================= CADASTROS ================= -->
 <section class="page" id="page-cad-produtos">
   <div class="page-head"><h2>Cadastro de Produtos (Matriz N)</h2><p>Produtos monitorados pelo Firewall.</p></div>
@@ -386,7 +437,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.12 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.13 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -619,6 +670,7 @@ function showPage(id) {
   if (id === 'digitacao') initDigitacao();
   if (id === 'dash-produto') initDash1();
   if (id === 'comparacao') initComparacao();
+  if (id === 'comp-scrap') initComparacaoScrap();
   if (id === 'cad-produtos') renderProdutos();
   if (id === 'cad-operadores') renderOperadores();
   if (id === 'cad-defeitos') renderDefeitos();
@@ -1537,6 +1589,183 @@ async function apRenderDirecao2(ano, mes, topN, janela, criterio) {
     <td>${l.semCodigo ? '<span class="chip t0">Sem código cadastrado</span>' : (l.encontrado ? '<span class="chip t2">✓ Apontado no Firewall</span>' : '<span class="chip" style="background:var(--danger)">⚠ Não encontrado no Firewall</span>')}</td>
     <td class="num">${fmtInt(l.defeitosCorrespondentes)}</td>
   </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem ações no Plano GP12 para o período selecionado.</td></tr>';
+}
+
+/* =====================================================================
+   COMPARAÇÃO COM SCRAP IQ (Supabase — projeto próprio do Scrap IQ)
+   - Projeto Supabase SEPARADO do usado no login do Firewall — por isso
+     tem sua própria tela de conexão (2º login), com um client Supabase
+     independente (supaScrap).
+   - Tabela genérica scrapiq_store(store,key,doc); interessa store='scrap',
+     onde cada `doc` é uma linha de refugo já detalhada por defeito
+     (materialCode 7 dígitos, defectDesc, defectQty, quantityProduced).
+   - NÃO existe padronização de nome de defeito entre os dois sistemas —
+     a correspondência usa só código + janela de dias; cada lado mostra
+     sua própria descrição de defeito, sem tentar casar automaticamente.
+   - Métricas do lado Scrap IQ (conforme definido pelo usuário):
+       quantidade absoluta = soma de defectQty
+       percentual = soma(defectQty) / (soma(quantityProduced) + soma(defectQty))
+   ===================================================================== */
+const SCRAPIQ_SUPABASE_URL = 'COLE_AQUI_A_URL_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
+const SCRAPIQ_SUPABASE_ANON_KEY = 'COLE_AQUI_A_ANON_KEY_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
+let supaScrap = null;
+let sqPronto = false;
+const sqState = { logado: false, email: null, registros: [] }; // registros: {codigo, materialDesc, data, defectDesc, defectQty, quantityProduced}
+
+function sqConfigurado() {
+  return SCRAPIQ_SUPABASE_URL.startsWith('http') && !SCRAPIQ_SUPABASE_ANON_KEY.startsWith('COLE_AQUI');
+}
+
+async function initComparacaoScrap() {
+  if (!sqPronto) {
+    $('sq-conectar').addEventListener('click', sqFazerLogin);
+    $('sq-senha').addEventListener('keydown', e => { if (e.key === 'Enter') sqFazerLogin(); });
+    $('sq-desconectar').addEventListener('click', sqDesconectar);
+    $('sq-atualizar').addEventListener('click', sqAtualizarComparacao);
+    sqPronto = true;
+  }
+  if (!sqConfigurado()) {
+    $('sq-login-status').innerHTML = '<span style="color:var(--danger)">Supabase do Scrap IQ ainda não configurado neste arquivo (SCRAPIQ_SUPABASE_URL / SCRAPIQ_SUPABASE_ANON_KEY).</span>';
+    $('sq-conectar').disabled = true;
+  }
+  if (sqState.logado) { await sqMostrarPainel(); }
+}
+
+async function sqFazerLogin() {
+  const email = $('sq-email').value.trim(), senha = $('sq-senha').value;
+  if (!email || !senha) { $('sq-login-status').textContent = 'Preencha e-mail e senha.'; return; }
+  $('sq-login-status').textContent = 'Conectando…';
+  try {
+    if (!supaScrap) supaScrap = window.supabase.createClient(SCRAPIQ_SUPABASE_URL, SCRAPIQ_SUPABASE_ANON_KEY);
+    const { error } = await supaScrap.auth.signInWithPassword({ email, password: senha });
+    if (error) { $('sq-login-status').innerHTML = `<span style="color:var(--danger)">${error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : error.message}</span>`; return; }
+    sqState.logado = true; sqState.email = email;
+    $('sq-senha').value = '';
+    await sqMostrarPainel();
+  } catch (err) { console.error(err); $('sq-login-status').innerHTML = '<span style="color:var(--danger)">Falha ao conectar. Confira a URL/chave do projeto.</span>'; }
+}
+async function sqDesconectar() {
+  try { await supaScrap.auth.signOut(); } catch (e) {}
+  sqState.logado = false; sqState.email = null; sqState.registros = [];
+  $('sq-painel').style.display = 'none';
+  $('sq-login-card').style.display = 'block';
+  $('sq-login-status').textContent = '';
+}
+
+async function sqMostrarPainel() {
+  $('sq-login-card').style.display = 'none';
+  $('sq-painel').style.display = 'block';
+  $('sq-conectado-como').textContent = `Conectado como ${sqState.email}`;
+  const anos = await anosDisponiveis();
+  $('sq-ano').innerHTML = anos.length ? anos.map(a => `<option>${a}</option>`).join('') : '<option value="">—</option>';
+  $('sq-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  const hoje = new Date();
+  if (anos.includes(hoje.getFullYear())) { $('sq-ano').value = hoje.getFullYear(); $('sq-mes').value = hoje.getMonth() + 1; }
+  await sqCarregarDadosScrapIQ();
+  await sqAtualizarComparacao();
+}
+
+/* Busca todas as linhas de refugo detalhado (store='scrap') do Scrap IQ. */
+async function sqCarregarDadosScrapIQ() {
+  toast('Carregando dados do Scrap IQ…', '');
+  const { data, error } = await supaScrap.from('scrapiq_store').select('doc').eq('store', 'scrap');
+  if (error) { toast('Erro ao ler o Scrap IQ: ' + error.message, 'err'); sqState.registros = []; return; }
+  sqState.registros = (data || []).map(r => r.doc).filter(d => d && d.materialCode).map(d => ({
+    codigo: String(d.materialCode).trim(),
+    materialDesc: d.materialDesc || '',
+    data: d.date || '',
+    defectDesc: d.defectDesc || '(sem descrição)',
+    defectQty: Number(d.defectQty) || 0,
+    quantityProduced: Number(d.quantityProduced) || 0
+  }));
+  toast(`Scrap IQ: ${fmtInt(sqState.registros.length)} linha(s) de refugo carregadas.`, 'ok');
+}
+
+async function sqAtualizarComparacao() {
+  const ano = Number($('sq-ano').value), mes = Number($('sq-mes').value);
+  const topN = Number($('sq-topn').value), janela = Number($('sq-janela').value), metrica = $('sq-metrica').value;
+  if (!ano) return;
+  await sqRenderDirecao1(ano, mes, topN, janela);
+  await sqRenderDirecao2(ano, mes, topN, janela, metrica);
+}
+
+/* Top defeitos do Scrap IQ (por defectDesc) dentro de um conjunto de linhas — texto compacto pra exibição. */
+function sqPrincipaisDefeitos(linhas, topK = 2) {
+  const porDefeito = new Map();
+  for (const l of linhas) porDefeito.set(l.defectDesc, (porDefeito.get(l.defectDesc) || 0) + l.defectQty);
+  const itens = [...porDefeito.entries()].sort((a, b) => b[1] - a[1]).slice(0, topK);
+  return itens.length ? itens.map(([nome, qtd]) => `${nome} (${fmtInt(qtd)})`).join(' / ') : '—';
+}
+/* % de refugo no padrão do Scrap IQ: defectQty / (quantityProduced + defectQty) */
+function sqPct(linhas) {
+  const defTotal = linhas.reduce((s, l) => s + l.defectQty, 0);
+  const prodTotal = linhas.reduce((s, l) => s + l.quantityProduced, 0);
+  const base = prodTotal + defTotal;
+  return base > 0 ? defTotal / base * 100 : 0;
+}
+
+/* Direção 1: top produtos do Firewall (por defeitos, no mês) → há refugo correspondente no Scrap IQ? */
+async function sqRenderDirecao1(ano, mes, topN, janela) {
+  const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+  const rowsFW = await db.inspecoes.where('anoMes').equals(anoMesSel).toArray();
+  const gFW = agrupa(rowsFW);
+  let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
+  if (topN > 0) itens = itens.slice(0, topN);
+  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+
+  const linhas = itens.map(([codigo, o]) => {
+    const datasDefeitoFW = rowsFW.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
+    const scrapDoProdutoPeriodo = sqState.registros.filter(r => r.codigo === codigo && r.data.slice(0, 7) === `${ano}-${String(mes).padStart(2, '0')}`);
+    const refugoPeriodo = scrapDoProdutoPeriodo.reduce((s, r) => s + r.defectQty, 0);
+    const scrapDoProdutoTudo = sqState.registros.filter(r => r.codigo === codigo);
+    const encontrado = scrapDoProdutoTudo.some(r => datasDefeitoFW.some(dfw => apDiasEntre(dfw, r.data) <= janela));
+    return {
+      codigo, descricaoFW: prodsMap.get(codigo) || '', defeitosFW: o.def,
+      refugoPeriodo, principaisDefeitos: sqPrincipaisDefeitos(scrapDoProdutoPeriodo),
+      temDadosScrap: scrapDoProdutoTudo.length > 0, encontrado
+    };
+  });
+
+  $('sq-tbl-d1').innerHTML = linhas.length ? linhas.map(l => `<tr>
+    <td class="mono">${esc(l.codigo)}</td><td>${esc(l.descricaoFW)}</td><td class="num">${fmtInt(l.defeitosFW)}</td>
+    <td class="num">${fmtInt(l.refugoPeriodo)}</td>
+    <td>${esc(l.principaisDefeitos)}</td>
+    <td>${!l.temDadosScrap ? '<span class="chip t0">Sem refugo registrado</span>' : (l.encontrado ? '<span class="chip t2">✓ Correspondência</span>' : '<span class="chip" style="background:var(--danger)">⚠ Sem correspondência na janela</span>')}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem produtos com defeito no período selecionado.</td></tr>';
+}
+
+/* Direção 2: top produtos do Scrap IQ (por refugo, no mês) → foram apontados no Firewall? */
+async function sqRenderDirecao2(ano, mes, topN, janela, metrica) {
+  const anoMesStr = `${ano}-${String(mes).padStart(2, '0')}`;
+  const regsPeriodo = sqState.registros.filter(r => r.data.slice(0, 7) === anoMesStr);
+  const porCodigo = new Map();
+  for (const r of regsPeriodo) { if (!porCodigo.has(r.codigo)) porCodigo.set(r.codigo, []); porCodigo.get(r.codigo).push(r); }
+  let itens = [...porCodigo.entries()].sort((a, b) => {
+    const va = metrica === 'pct' ? sqPct(a[1]) : a[1].reduce((s, r) => s + r.defectQty, 0);
+    const vb = metrica === 'pct' ? sqPct(b[1]) : b[1].reduce((s, r) => s + r.defectQty, 0);
+    return vb - va;
+  });
+  if (topN > 0) itens = itens.slice(0, topN);
+
+  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const rowsFWAno = await db.inspecoes.where('ano').equals(ano).toArray();
+
+  const linhas = itens.map(([codigo, linhasScrap]) => {
+    const valor = metrica === 'pct' ? sqPct(linhasScrap) : linhasScrap.reduce((s, r) => s + r.defectQty, 0);
+    const datasScrap = linhasScrap.map(r => r.data);
+    const datasFW = rowsFWAno.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
+    const datasBatendo = datasFW.filter(dfw => datasScrap.some(ds => apDiasEntre(dfw, ds) <= janela));
+    const desc = linhasScrap.find(r => r.materialDesc)?.materialDesc || prodsMap.get(codigo) || '';
+    return { codigo, descricao: desc, valor, principaisDefeitos: sqPrincipaisDefeitos(linhasScrap), encontrado: datasBatendo.length > 0, defeitosCorrespondentes: datasBatendo.length };
+  });
+
+  $('sq-tbl-d2').innerHTML = linhas.length ? linhas.map(l => `<tr>
+    <td class="mono">${esc(l.codigo)}</td><td>${esc(l.descricao)}</td>
+    <td class="num">${metrica === 'pct' ? fmtPct(l.valor) : fmtInt(l.valor)}</td>
+    <td>${esc(l.principaisDefeitos)}</td>
+    <td>${l.encontrado ? '<span class="chip t2">✓ Apontado no Firewall</span>' : '<span class="chip" style="background:var(--danger)">⚠ Não encontrado no Firewall</span>'}</td>
+    <td class="num">${fmtInt(l.defeitosCorrespondentes)}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem refugo registrado no Scrap IQ para o período selecionado.</td></tr>';
 }
 
 /* =====================================================================
