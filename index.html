@@ -1606,8 +1606,8 @@ async function apRenderDirecao2(ano, mes, topN, janela, criterio) {
        quantidade absoluta = soma de defectQty
        percentual = soma(defectQty) / (soma(quantityProduced) + soma(defectQty))
    ===================================================================== */
-const SCRAPIQ_SUPABASE_URL = 'COLE_AQUI_A_URL_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
-const SCRAPIQ_SUPABASE_ANON_KEY = 'COLE_AQUI_A_ANON_KEY_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
+const SCRAPIQ_SUPABASE_URL = 'https://pdornupeyzeemmeospph.supabase.co';
+const SCRAPIQ_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkb3JudXBleXplZW1tZW9zcHBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5NDM4ODMsImV4cCI6MjA5OTUxOTg4M30.VLjweTonpCa0PzxmovS5fK5pmM-Y3qmwl7OIRpiIxts';
 let supaScrap = null;
 let sqPronto = false;
 const sqState = { logado: false, email: null, registros: [] }; // registros: {codigo, materialDesc, data, defectDesc, defectQty, quantityProduced}
