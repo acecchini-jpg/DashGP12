@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.13</title>
+<title>Firewall Management V1.14</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.13</small>
+    <small>MANAGEMENT · V1.14</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -437,7 +437,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.13 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.14 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1606,8 +1606,8 @@ async function apRenderDirecao2(ano, mes, topN, janela, criterio) {
        quantidade absoluta = soma de defectQty
        percentual = soma(defectQty) / (soma(quantityProduced) + soma(defectQty))
    ===================================================================== */
-const SCRAPIQ_SUPABASE_URL = 'https://pdornupeyzeemmeospph.supabase.co';
-const SCRAPIQ_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkb3JudXBleXplZW1tZW9zcHBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5NDM4ODMsImV4cCI6MjA5OTUxOTg4M30.VLjweTonpCa0PzxmovS5fK5pmM-Y3qmwl7OIRpiIxts';
+const SCRAPIQ_SUPABASE_URL = 'COLE_AQUI_A_URL_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
+const SCRAPIQ_SUPABASE_ANON_KEY = 'COLE_AQUI_A_ANON_KEY_DO_PROJETO_SUPABASE_DO_SCRAP_IQ';
 let supaScrap = null;
 let sqPronto = false;
 const sqState = { logado: false, email: null, registros: [] }; // registros: {codigo, materialDesc, data, defectDesc, defectQty, quantityProduced}
@@ -1668,9 +1668,20 @@ async function sqMostrarPainel() {
 /* Busca todas as linhas de refugo detalhado (store='scrap') do Scrap IQ. */
 async function sqCarregarDadosScrapIQ() {
   toast('Carregando dados do Scrap IQ…', '');
-  const { data, error } = await supaScrap.from('scrapiq_store').select('doc').eq('store', 'scrap');
-  if (error) { toast('Erro ao ler o Scrap IQ: ' + error.message, 'err'); sqState.registros = []; return; }
-  sqState.registros = (data || []).map(r => r.doc).filter(d => d && d.materialCode).map(d => ({
+  const TAMANHO_PAGINA = 1000;
+  let todos = [];
+  let pagina = 0;
+  while (true) {
+    const de = pagina * TAMANHO_PAGINA;
+    const ate = de + TAMANHO_PAGINA - 1;
+    const { data, error } = await supaScrap.from('scrapiq_store').select('doc').eq('store', 'scrap').range(de, ate);
+    if (error) { toast('Erro ao ler o Scrap IQ: ' + error.message, 'err'); sqState.registros = []; return; }
+    if (!data || !data.length) break;
+    todos = todos.concat(data);
+    if (data.length < TAMANHO_PAGINA) break; // última página
+    pagina++;
+  }
+  sqState.registros = todos.map(r => r.doc).filter(d => d && d.materialCode).map(d => ({
     codigo: String(d.materialCode).trim(),
     materialDesc: d.materialDesc || '',
     data: d.date || '',
