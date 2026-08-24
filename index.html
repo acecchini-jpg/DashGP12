@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.16</title>
+<title>Firewall Management V1.17</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.16</small>
+    <small>MANAGEMENT · V1.17</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -439,7 +439,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.16 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.17 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1670,38 +1670,49 @@ async function sqMostrarPainel() {
 /* Busca todas as linhas de refugo detalhado (store='scrap') do Scrap IQ. */
 async function sqCarregarDadosScrapIQ() {
   toast('Carregando dados do Scrap IQ…', '');
-  const TAMANHO_PAGINA = 1000;
-  let todos = [];
-  let pagina = 0;
-  while (true) {
-    const de = pagina * TAMANHO_PAGINA;
-    const ate = de + TAMANHO_PAGINA - 1;
-    const { data, error } = await supaScrap.from('scrapiq_store').select('key, doc').eq('store', 'scrap').order('key', { ascending: true }).range(de, ate);
-    if (error) { toast('Erro ao ler o Scrap IQ: ' + error.message, 'err'); sqState.registros = []; return; }
-    if (!data || !data.length) break;
-    todos = todos.concat(data);
-    if (data.length < TAMANHO_PAGINA) break; // última página
-    pagina++;
+  try {
+    const TAMANHO_PAGINA = 1000;
+    let todos = [];
+    let pagina = 0;
+    while (true) {
+      const de = pagina * TAMANHO_PAGINA;
+      const ate = de + TAMANHO_PAGINA - 1;
+      const { data, error } = await supaScrap.from('scrapiq_store').select('key, doc').eq('store', 'scrap').order('key', { ascending: true }).range(de, ate);
+      if (error) throw new Error(error.message || JSON.stringify(error));
+      if (!data || !data.length) break;
+      todos = todos.concat(data);
+      if (data.length < TAMANHO_PAGINA) break; // última página
+      pagina++;
+    }
+    const porChave = new Map(); // segurança extra: deduplica por `key` (chave primária), caso alguma página se sobreponha
+    for (const r of todos) porChave.set(r.key, r.doc);
+    sqState.registros = [...porChave.values()].filter(d => d && d.materialCode).map(d => ({
+      codigo: String(d.materialCode).trim(),
+      materialDesc: d.materialDesc || '',
+      data: d.date || '',
+      defectDesc: d.defectDesc || '(sem descrição)',
+      defectQty: Number(d.defectQty) || 0,
+      quantityProduced: Number(d.quantityProduced) || 0
+    }));
+    toast(`Scrap IQ: ${fmtInt(sqState.registros.length)} linha(s) de refugo carregadas.`, 'ok');
+  } catch (err) {
+    console.error('sqCarregarDadosScrapIQ:', err);
+    sqState.registros = [];
+    toast('Erro ao carregar dados do Scrap IQ: ' + (err.message || 'falha desconhecida — veja o console (F12).'), 'err');
   }
-  const porChave = new Map(); // segurança extra: deduplica por `key` (chave primária), caso alguma página se sobreponha
-  for (const r of todos) porChave.set(r.key, r.doc);
-  sqState.registros = [...porChave.values()].filter(d => d && d.materialCode).map(d => ({
-    codigo: String(d.materialCode).trim(),
-    materialDesc: d.materialDesc || '',
-    data: d.date || '',
-    defectDesc: d.defectDesc || '(sem descrição)',
-    defectQty: Number(d.defectQty) || 0,
-    quantityProduced: Number(d.quantityProduced) || 0
-  }));
-  toast(`Scrap IQ: ${fmtInt(sqState.registros.length)} linha(s) de refugo carregadas.`, 'ok');
 }
 
 async function sqAtualizarComparacao() {
   const ano = Number($('sq-ano').value), mes = Number($('sq-mes').value);
   const topN = Number($('sq-topn').value), janela = Number($('sq-janela').value), metrica = $('sq-metrica').value;
   if (!ano) return;
-  await sqRenderDirecao1(ano, mes, topN, janela);
-  await sqRenderDirecao2(ano, mes, topN, janela, metrica);
+  try {
+    await sqRenderDirecao1(ano, mes, topN, janela);
+    await sqRenderDirecao2(ano, mes, topN, janela, metrica);
+  } catch (err) {
+    console.error('sqAtualizarComparacao:', err);
+    toast('Erro ao montar a comparação: ' + (err.message || 'falha desconhecida — veja o console (F12).'), 'err');
+  }
 }
 
 /* Top defeitos do Scrap IQ (por defectDesc) dentro de um conjunto de linhas — texto compacto pra exibição. */
