@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.14</title>
+<title>Firewall Management V1.15</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.14</small>
+    <small>MANAGEMENT · V1.15</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -352,6 +352,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
     <div class="card">
       <h3>Direção 1 — Top produtos do Firewall → há refugo correspondente no Scrap IQ?</h3>
+      <p class="muted" id="sq-periodo-d1" style="font-size:11.5px;font-family:var(--mono);margin-bottom:4px"></p>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os produtos com mais defeitos no Firewall no período e verifica se o Scrap IQ registrou refugo para o mesmo código, dentro da janela de dias.</p>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Código</th><th>Descrição</th><th class="num">Defeitos (Firewall)</th><th class="num">Refugo (Scrap IQ) — período</th><th>Principais defeitos (Scrap IQ)</th><th>Situação</th></tr></thead>
@@ -361,6 +362,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
     <div class="card">
       <h3>Direção 2 — Top produtos do Scrap IQ → foram apontados no Firewall?</h3>
+      <p class="muted" id="sq-periodo-d2" style="font-size:11.5px;font-family:var(--mono);margin-bottom:4px"></p>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Pega os produtos com mais refugo no Scrap IQ no período (por quantidade absoluta ou %, conforme a Métrica escolhida) e verifica se o Firewall também apontou defeito para o mesmo código, dentro da janela de dias. Quanto mais refugo, maior o risco de algum problema não ser visto no processo e acabar chegando ao Firewall.</p>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Código</th><th>Descrição</th><th class="num">Refugo (Scrap IQ)</th><th>Principais defeitos (Scrap IQ)</th><th>Situação</th><th class="num">Defeitos correspondentes (Firewall)</th></tr></thead>
@@ -437,7 +439,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.14 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.15 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1718,6 +1720,7 @@ function sqPct(linhas) {
 /* Direção 1: top produtos do Firewall (por defeitos, no mês) → há refugo correspondente no Scrap IQ? */
 async function sqRenderDirecao1(ano, mes, topN, janela) {
   const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
+  $('sq-periodo-d1').textContent = `Período: ${MESES[mes - 1]}/${ano} (campo "data" do Scrap IQ, formato AAAA-MM-DD) · janela ±${janela} dia(s)`;
   const rowsFW = await db.inspecoes.where('anoMes').equals(anoMesSel).toArray();
   const gFW = agrupa(rowsFW);
   let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
@@ -1748,7 +1751,9 @@ async function sqRenderDirecao1(ano, mes, topN, janela) {
 /* Direção 2: top produtos do Scrap IQ (por refugo, no mês) → foram apontados no Firewall? */
 async function sqRenderDirecao2(ano, mes, topN, janela, metrica) {
   const anoMesStr = `${ano}-${String(mes).padStart(2, '0')}`;
-  const regsPeriodo = sqState.registros.filter(r => r.data.slice(0, 7) === anoMesStr);
+  $('sq-periodo-d2').textContent = `Período: ${MESES[mes - 1]}/${ano} (campo "data" do Scrap IQ, formato AAAA-MM-DD) · janela ±${janela} dia(s) · métrica: ${metrica === 'pct' ? 'percentual' : 'quantidade absoluta'} · itens "WIP" excluídos`;
+  const ehWIP = r => /^wip/i.test(String(r.materialDesc || '').trim());
+  const regsPeriodo = sqState.registros.filter(r => r.data.slice(0, 7) === anoMesStr && !ehWIP(r));
   const porCodigo = new Map();
   for (const r of regsPeriodo) { if (!porCodigo.has(r.codigo)) porCodigo.set(r.codigo, []); porCodigo.get(r.codigo).push(r); }
   let itens = [...porCodigo.entries()].sort((a, b) => {
