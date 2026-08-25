@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.17</title>
+<title>Firewall Management V1.18</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.17</small>
+    <small>MANAGEMENT · V1.18</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -263,6 +263,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
         <th class="sortable" data-sort="turno">Turno<span class="arrow"></span></th>
         <th class="sortable num" data-sort="insp">Inspecionadas<span class="arrow"></span></th>
         <th class="sortable num" data-sort="def">Defeitos<span class="arrow"></span></th>
+        <th class="sortable num" data-sort="ocorrencias">Ocorrências<span class="arrow"></span></th>
         <th class="sortable num" data-sort="taxa">Taxa de Aderência<span class="arrow"></span></th>
       </tr></thead>
       <tbody id="d2-tbl-oper"></tbody>
@@ -338,6 +339,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
   <div id="sq-painel" style="display:none">
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <span class="muted" style="font-size:12.5px" id="sq-conectado-como"></span>
+      <span class="mono" style="font-size:12px;color:var(--accent);display:none" id="sq-progresso"></span>
       <button class="btn sm sec" id="sq-desconectar">Desconectar</button>
     </div>
 
@@ -439,7 +441,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.17 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.18 — SPA local-first (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1305,7 +1307,7 @@ async function renderDash1() {
     .filter(([, o]) => o.insp > 0 || o.def > 0)
     .map(([mat, o]) => {
       const cad = operMap.get(String(mat).trim());
-      return { mat, nome: cad ? cad.nome : '—', turno: cad ? cad.turno : 'Sem Classificação', insp: o.insp, def: o.def, taxa: pct(o.def, o.insp) };
+      return { mat, nome: cad ? cad.nome : '—', turno: cad ? cad.turno : 'Sem Classificação', insp: o.insp, def: o.def, ocorrencias: o.ocorDef, taxa: pct(o.def, o.insp) };
     });
   renderTabelaOperador();
 }
@@ -1325,9 +1327,9 @@ function renderTabelaOperador() {
   });
   $('d2-tbl-oper').innerHTML = linhas.length ? linhas.map(l => `<tr>
     <td class="mono">${esc(l.mat)}</td><td>${esc(l.nome)}</td><td>${chipTurno(l.turno)}</td>
-    <td class="num">${fmtInt(l.insp)}</td><td class="num">${fmtInt(l.def)}</td>
+    <td class="num">${fmtInt(l.insp)}</td><td class="num">${fmtInt(l.def)}</td><td class="num">${fmtInt(l.ocorrencias)}</td>
     <td class="num pct-cell" style="color:${l.taxa <= metaPct ? 'var(--ok)' : 'var(--danger)'}">${l.insp > 0 ? fmtPct(l.taxa) : '—'}</td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">Sem registros para o período.</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">Sem registros para o período.</td></tr>';
   document.querySelectorAll('#page-dash-produto th.sortable').forEach(th => {
     th.classList.toggle('sort-asc', th.dataset.sort === key && dir === 'asc');
     th.classList.toggle('sort-desc', th.dataset.sort === key && dir === 'desc');
@@ -1663,15 +1665,21 @@ async function sqMostrarPainel() {
   $('sq-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
   const hoje = new Date();
   if (anos.includes(hoje.getFullYear())) { $('sq-ano').value = hoje.getFullYear(); $('sq-mes').value = hoje.getMonth() + 1; }
+  $('sq-atualizar').disabled = true;
   await sqCarregarDadosScrapIQ();
+  $('sq-atualizar').disabled = false;
   await sqAtualizarComparacao();
 }
 
 /* Busca todas as linhas de refugo detalhado (store='scrap') do Scrap IQ. */
 async function sqCarregarDadosScrapIQ() {
-  toast('Carregando dados do Scrap IQ…', '');
+  const elProgresso = $('sq-progresso');
+  elProgresso.style.display = 'inline';
+  elProgresso.textContent = 'Carregando dados do Scrap IQ…';
   try {
     const TAMANHO_PAGINA = 1000;
+    const { count, error: erroCount } = await supaScrap.from('scrapiq_store').select('key', { count: 'exact', head: true }).eq('store', 'scrap');
+    const total = !erroCount && typeof count === 'number' ? count : null;
     let todos = [];
     let pagina = 0;
     while (true) {
@@ -1681,6 +1689,9 @@ async function sqCarregarDadosScrapIQ() {
       if (error) throw new Error(error.message || JSON.stringify(error));
       if (!data || !data.length) break;
       todos = todos.concat(data);
+      elProgresso.textContent = total
+        ? `Carregando Scrap IQ… ${fmtInt(todos.length)} / ${fmtInt(total)} (${Math.min(100, Math.round(todos.length / total * 100))}%)`
+        : `Carregando Scrap IQ… ${fmtInt(todos.length)} linha(s)`;
       if (data.length < TAMANHO_PAGINA) break; // última página
       pagina++;
     }
@@ -1694,10 +1705,12 @@ async function sqCarregarDadosScrapIQ() {
       defectQty: Number(d.defectQty) || 0,
       quantityProduced: Number(d.quantityProduced) || 0
     }));
+    elProgresso.style.display = 'none';
     toast(`Scrap IQ: ${fmtInt(sqState.registros.length)} linha(s) de refugo carregadas.`, 'ok');
   } catch (err) {
     console.error('sqCarregarDadosScrapIQ:', err);
     sqState.registros = [];
+    elProgresso.style.display = 'none';
     toast('Erro ao carregar dados do Scrap IQ: ' + (err.message || 'falha desconhecida — veja o console (F12).'), 'err');
   }
 }
