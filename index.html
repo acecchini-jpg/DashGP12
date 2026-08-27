@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.21</title>
+<title>Firewall Management V1.22</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.21</small>
+    <small>MANAGEMENT · V1.22</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -154,7 +154,6 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
     <button class="nav-item nivel1-only" data-page="comparacao"><span class="ico">⇄</span>Comparação Action Plan</button>
     <button class="nav-item nivel1-only" data-page="comp-scrap"><span class="ico">♻</span>Comparação Scrap IQ</button>
     <div class="nav-sec nivel1-only" id="nav-sec-operacao">Operação</div>
-    <button class="nav-item nivel1-only" data-page="digitacao"><span class="ico">⌨</span>Digitação Rápida</button>
     <button class="nav-item nivel1-only" data-page="importacao"><span class="ico">⇪</span>Importação</button>
     <div class="nav-sec nivel1-only" id="nav-sec-cadastros">Cadastros</div>
     <button class="nav-item nivel1-only" data-page="cad-produtos"><span class="ico">◧</span>Produtos (Matriz N)</button>
@@ -221,6 +220,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
       <p>Lê a aba <b class="mono">Dados</b> (colunas A–L). Após a leitura, o sistema pergunta <b>de qual ano</b> importar e limita a importação a esse ano. AnoMês/Semana são recalculados a partir da Data e o <b>Turno é recalculado pelo cadastro de operadores</b>.</p>
       <input type="file" id="imp-dados-file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
       <button class="btn" onclick="document.getElementById('imp-dados-file').click()">Selecionar arquivo</button>
+      <p class="muted mono" id="imp-progresso-dados" style="font-size:12px;margin-top:8px;display:none"></p>
     </div>
   </div>
   <div class="card" id="imp-log-card" style="display:none"><h3>Log da importação</h3><div id="imp-log" class="mono" style="font-size:12px;white-space:pre-wrap;line-height:1.6"></div></div>
@@ -430,12 +430,17 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
     <p class="muted" style="margin-bottom:12px;font-size:12.5px">Produtos, Operadores, Defeitos e De→Para agora vivem no Supabase (compartilhados entre todos). Se você já tinha esses cadastros gravados localmente neste navegador antes desta atualização, use o botão abaixo para enviá-los — só adiciona o que ainda não existe lá, pode rodar mais de uma vez com segurança.</p>
     <button class="btn sec" id="cfg-migrar-cadastros">Migrar Cadastros locais para o Supabase</button>
   </div>
+  <div class="card" style="max-width:520px">
+    <h3>Migrar inspeções para o Supabase</h3>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Se você já tinha dados de inspeção gravados localmente neste navegador antes desta atualização, use o botão abaixo para enviá-los ao Supabase. Isso <b>substitui</b> (por ano) o que já estiver lá — a mesma regra usada na Importação normal. Pode demorar alguns minutos se o volume for grande.</p>
+    <button class="btn sec" id="cfg-migrar-inspecoes">Migrar inspeções locais para o Supabase</button>
+    <p class="muted mono" id="cfg-progresso-migracao" style="font-size:12px;margin-top:8px;display:none"></p>
+  </div>
   <div class="card" style="max-width:520px;border-color:#E8C9C5">
     <h3 style="color:var(--danger)">Zona de risco</h3>
-    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Ações irreversíveis sobre os dados de inspeção locais (IndexedDB). Produtos, Operadores, Defeitos e De→Para agora são compartilhados no Supabase — para apagá-los, use as telas de Cadastro (exclusão item a item), não este botão.</p>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Inspeções agora vivem no Supabase — este botão apaga do banco compartilhado, <b>afetando todos os usuários</b>, não só este navegador. Produtos, Operadores, Defeitos e De→Para não são tocados aqui; use as telas de Cadastro pra isso.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn danger" id="cfg-limpar-insp">Apagar dados de inspeção</button>
-      <button class="btn danger" id="cfg-limpar-tudo">Apagar dados locais (inspeções + meta)</button>
+      <button class="btn danger" id="cfg-limpar-insp">Apagar todos os dados de inspeção (Supabase)</button>
     </div>
   </div>
 </section>
@@ -447,7 +452,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.21 — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.22 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -582,9 +587,46 @@ async function refreshCaches() {
   }
   const cfg = await db.config.get('metaPct'); // meta continua local (fora desta migração)
   metaPct = cfg ? Number(cfg.valor) : 1.0;
-  const n = await db.inspecoes.count();
-  $('db-status').textContent = `IndexedDB · ${fmtInt(n)} registros`;
+  const { count: nInsp } = await supa.from('inspecoes').select('id', { count: 'exact', head: true });
+  $('db-status').textContent = `Inspeções (Supabase) · ${fmtInt(nInsp || 0)} registros`;
 }
+
+/* ---------- Inspeções (Supabase): paginação, mapeamento de linha e cache por ano ----------
+   `inspecoes` é a maior tabela (100k+ linhas/ano) — por isso: (1) toda leitura passa por
+   supaFetchPaginado (nunca esbarra no limite de 1000 linhas do PostgREST); (2) o ano inteiro
+   é buscado UMA VEZ e guardado em memória (inspecoesCache) — Dashboard, dropdown de código e
+   as duas abas de Comparação reaproveitam esse cache em vez de repetir a consulta a cada filtro
+   trocado (Opção A do plano: agregação continua no JavaScript, só a fonte dos dados mudou). */
+async function supaFetchPaginado(factoryQuery, tamanhoPagina = 1000) {
+  let todos = [];
+  let pagina = 0;
+  while (true) {
+    const de = pagina * tamanhoPagina, ate = de + tamanhoPagina - 1;
+    const { data, error } = await factoryQuery().range(de, ate);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    todos = todos.concat(data);
+    if (data.length < tamanhoPagina) break;
+    pagina++;
+  }
+  return todos;
+}
+function mapRowInspecao(r) {
+  return { id: r.id, codigo: r.codigo, codN: r.cod_n, ano: r.ano, anoMes: r.ano_mes, semana: r.semana,
+    data: r.data, inspetor: r.inspetor, defeito: r.defeito, quantidade: Number(r.quantidade) || 0,
+    operador: r.operador, codOperador: r.cod_operador, turno: r.turno, origem: r.origem };
+}
+const inspecoesCache = new Map(); // ano(number) -> linhas mapeadas (camelCase, prontas pro resto do app)
+async function carregarInspecoesDoAno(ano, forcar = false) {
+  if (!ano) return [];
+  if (!forcar && inspecoesCache.has(ano)) return inspecoesCache.get(ano);
+  const linhas = (await supaFetchPaginado(() =>
+    supa.from('inspecoes').select('*').eq('ano', ano).order('id', { ascending: true })
+  )).map(mapRowInspecao);
+  inspecoesCache.set(ano, linhas);
+  return linhas;
+}
+function invalidarCacheInspecoes(ano) { inspecoesCache.delete(ano); }
 
 /* ---------- Modal genérico ---------- */
 function openModal(titulo, bodyHTML, botoes) {
@@ -897,9 +939,26 @@ $('imp-dados-file').addEventListener('change', async e => {
     if (res.acao !== 'ok') return;
     const anoSel = Number(res.dados.ano);
     const finais = parsed.filter(p => p.ano === anoSel);
-    const existentesAntes = await db.inspecoes.where('ano').equals(anoSel).count();
-    await db.inspecoes.where('ano').equals(anoSel).delete();
-    for (let i = 0; i < finais.length; i += 2000) await db.inspecoes.bulkAdd(finais.slice(i, i + 2000));
+    const elProg = $('imp-progresso-dados');
+    elProg.style.display = 'block';
+    elProg.textContent = 'Verificando dados existentes…';
+    const { count: existentesAntes, error: errCount } = await supa.from('inspecoes').select('id', { count: 'exact', head: true }).eq('ano', anoSel);
+    if (errCount) throw errCount;
+    elProg.textContent = `Removendo ${fmtInt(existentesAntes || 0)} registro(s) antigo(s) de ${anoSel}…`;
+    const { error: errDel } = await supa.from('inspecoes').delete().eq('ano', anoSel);
+    if (errDel) throw errDel;
+    const paraLinhaSupabase = p => ({ codigo: p.codigo, cod_n: p.codN, ano: p.ano, ano_mes: p.anoMes, semana: p.semana,
+      data: p.data, inspetor: p.inspetor, defeito: p.defeito, quantidade: p.quantidade,
+      operador: p.operador, cod_operador: p.codOperador, turno: p.turno, origem: p.origem });
+    const TAMANHO_LOTE = 1000;
+    for (let i = 0; i < finais.length; i += TAMANHO_LOTE) {
+      const lote = finais.slice(i, i + TAMANHO_LOTE).map(paraLinhaSupabase);
+      const { error: errIns } = await supa.from('inspecoes').insert(lote);
+      if (errIns) throw errIns;
+      elProg.textContent = `Enviando ao Supabase… ${fmtInt(Math.min(i + TAMANHO_LOTE, finais.length))} / ${fmtInt(finais.length)} (${Math.round(Math.min(i + TAMANHO_LOTE, finais.length) / finais.length * 100)}%)`;
+    }
+    invalidarCacheInspecoes(anoSel);
+    elProg.style.display = 'none';
     /* Alimenta catálogo de defeitos com nomes normalizados */
     const nomes = [...new Set(finais.map(p => normDefeito(p.defeito)).filter(n => n && !isInspecao(n)))];
     if (nomes.length) {
@@ -907,9 +966,13 @@ $('imp-dados-file').addEventListener('change', async e => {
       if (errCat) console.error('Erro ao atualizar catálogo de defeitos:', errCat);
     }
     await refreshCaches();
-    logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(existentesAntes)} registro(s) antigo(s) substituído(s) por ${fmtInt(finais.length)} novo(s) (duplicatas dentro da própria planilha preservadas).`);
-    toast(`${fmtInt(finais.length)} registros de ${anoSel} importados, substituindo os ${fmtInt(existentesAntes)} anteriores.`, 'ok');
-  } catch (err) { console.error(err); toast('Erro na importação de dados: ' + err.message, 'err'); }
+    logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(existentesAntes || 0)} registro(s) antigo(s) substituído(s) por ${fmtInt(finais.length)} novo(s) (duplicatas dentro da própria planilha preservadas).`);
+    toast(`${fmtInt(finais.length)} registros de ${anoSel} importados, substituindo os ${fmtInt(existentesAntes || 0)} anteriores.`, 'ok');
+  } catch (err) {
+    console.error(err);
+    $('imp-progresso-dados').style.display = 'none';
+    toast('Erro na importação de dados: ' + (err.message || 'falha desconhecida'), 'err');
+  }
 });
 
 /* =====================================================================
@@ -1040,8 +1103,9 @@ function agrupa(rows) {
 const pct = (def, insp) => insp > 0 ? def / insp * 100 : 0;
 
 async function anosDisponiveis() {
-  const ks = await db.inspecoes.orderBy('ano').uniqueKeys();
-  return ks.map(Number).sort((a, b) => b - a);
+  const { data, error } = await supa.from('anos_disponiveis').select('ano');
+  if (error) { console.error('anosDisponiveis:', error); return []; }
+  return (data || []).map(r => Number(r.ano)).sort((a, b) => b - a);
 }
 function mesesDoAno(ano) {
   const out = [];
@@ -1132,7 +1196,7 @@ async function limparFiltros() {
 async function popularCodigosD1(termo) {
   termo = (termo ?? '').trim().toLowerCase();
   const ano = Number($('d1-ano').value);
-  const rows = ano ? await db.inspecoes.where('ano').equals(ano).toArray() : [];
+  const rows = ano ? await carregarInspecoesDoAno(ano) : [];
   const cods = [...new Set(rows.map(r => codN(r)))].filter(Boolean).sort();
   const prods = produtosMap;
   let opts = cods.map(c => ({ c, desc: prods.get(c) || '' }));
@@ -1203,7 +1267,7 @@ async function renderDash1() {
   }
   const anoMesSel = mes ? `${ano}${String(mes).padStart(2, '0')}` : null;
 
-  const todasRows = await db.inspecoes.where('ano').equals(ano).toArray();
+  const todasRows = await carregarInspecoesDoAno(ano);
   const bate = r => {
     if (codigoSel && codN(r) !== codigoSel) return false;
     if (operadorSel && !String(r.codOperador || '').toLowerCase().includes(operadorSel)) return false;
@@ -1575,7 +1639,7 @@ async function apAtualizarComparacao() {
 /* Direção 1: top produtos do Firewall (por defeitos, no mês) → existe ação no Action Plan? */
 async function apRenderDirecao1(ano, mes, topN, janela) {
   const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
-  const rowsFW = await db.inspecoes.where('anoMes').equals(anoMesSel).toArray();
+  const rowsFW = (await carregarInspecoesDoAno(ano)).filter(r => r.anoMes === anoMesSel);
   const gFW = agrupa(rowsFW);
   let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
   if (topN > 0) itens = itens.slice(0, topN);
@@ -1626,7 +1690,7 @@ async function apRenderDirecao2(ano, mes, topN, janela, criterio) {
   if (topN > 0) itens = itens.slice(0, topN);
 
   const subInfo = new Map(apState.subtopicos.map(s => [s.id, s]));
-  const rowsFWAno = await db.inspecoes.where('ano').equals(ano).toArray();
+  const rowsFWAno = await carregarInspecoesDoAno(ano);
 
   const linhas = itens.map(([subId, agg]) => {
     const sub = subInfo.get(subId);
@@ -1803,7 +1867,7 @@ function sqPct(linhas) {
 async function sqRenderDirecao1(ano, mes, topN, janela) {
   const anoMesSel = `${ano}${String(mes).padStart(2, '0')}`;
   $('sq-periodo-d1').textContent = `Período: ${MESES[mes - 1]}/${ano} (campo "data" do Scrap IQ, formato AAAA-MM-DD) · janela ±${janela} dia(s)`;
-  const rowsFW = await db.inspecoes.where('anoMes').equals(anoMesSel).toArray();
+  const rowsFW = (await carregarInspecoesDoAno(ano)).filter(r => r.anoMes === anoMesSel);
   const gFW = agrupa(rowsFW);
   let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
   if (topN > 0) itens = itens.slice(0, topN);
@@ -1846,7 +1910,7 @@ async function sqRenderDirecao2(ano, mes, topN, janela, metrica) {
   if (topN > 0) itens = itens.slice(0, topN);
 
   const prodsMap = produtosMap;
-  const rowsFWAno = await db.inspecoes.where('ano').equals(ano).toArray();
+  const rowsFWAno = await carregarInspecoesDoAno(ano);
 
   const linhas = itens.map(([codigo, linhasScrap]) => {
     const valor = metrica === 'pct' ? sqPct(linhasScrap) : linhasScrap.reduce((s, r) => s + r.defectQty, 0);
@@ -2005,7 +2069,12 @@ $('cfg-salvar').addEventListener('click', async () => {
   toast(`Meta salva: ${fmtPct(v)}.`, 'ok');
 });
 $('cfg-recalc-turno').addEventListener('click', async () => {
-  const todos = await db.inspecoes.toArray();
+  toast('Buscando registros no Supabase…', '');
+  let todos;
+  try {
+    todos = (await supaFetchPaginado(() => supa.from('inspecoes').select('id, cod_operador, turno').order('id', { ascending: true })))
+      .map(r => ({ id: r.id, codOperador: r.cod_operador, turno: r.turno }));
+  } catch (err) { toast('Erro ao buscar registros: ' + (err.message || 'falha desconhecida'), 'err'); return; }
   const candidatos = todos.filter(r => !r.turno || r.turno === 'Sem Classificação');
   const corrigiveis = candidatos.filter(r => {
     const cad = operMap.get(String(r.codOperador || '').trim());
@@ -2014,12 +2083,25 @@ $('cfg-recalc-turno').addEventListener('click', async () => {
   if (!corrigiveis.length) { toast('Nenhum registro "Sem Classificação" pôde ser corrigido — os operadores desses registros também não estão no cadastro atual (ou o cadastro deles também está "Sem Classificação").', ''); return; }
   const ok = await confirmar('Recalcular turnos', `Encontrados <b>${fmtInt(corrigiveis.length)}</b> registro(s) "Sem Classificação" cujo operador já está corretamente cadastrado hoje. Atualizar o turno gravado nesses registros para o valor atual do cadastro?`);
   if (!ok) return;
-  let atualizados = 0;
+  /* Agrupa por turno-alvo: 1 requisição em lote por valor de turno, em vez de 1 por linha */
+  const porTurno = new Map();
   for (const r of corrigiveis) {
     const cad = operMap.get(String(r.codOperador || '').trim());
-    await db.inspecoes.update(r.id, { turno: cad.turno });
-    atualizados++;
+    if (!porTurno.has(cad.turno)) porTurno.set(cad.turno, []);
+    porTurno.get(cad.turno).push(r.id);
   }
+  let atualizados = 0;
+  try {
+    for (const [turnoNovo, ids] of porTurno.entries()) {
+      for (let i = 0; i < ids.length; i += 500) {
+        const lote = ids.slice(i, i + 500);
+        const { error } = await supa.from('inspecoes').update({ turno: turnoNovo }).in('id', lote);
+        if (error) throw error;
+        atualizados += lote.length;
+      }
+    }
+  } catch (err) { toast(`Erro ao atualizar (${fmtInt(atualizados)} corrigido(s) antes do erro): ` + (err.message || 'falha desconhecida'), 'err'); }
+  inspecoesCache.clear();
   await refreshCaches();
   toast(`${fmtInt(atualizados)} registro(s) atualizado(s). Recarregue o Dashboard para ver o gráfico "Por Turno" corrigido.`, 'ok');
 });
@@ -2062,19 +2144,54 @@ $('cfg-migrar-cadastros').addEventListener('click', async () => {
     toast('Erro na migração: ' + (err.message || 'falha desconhecida'), 'err');
   }
 });
-$('cfg-limpar-insp').addEventListener('click', async () => {
-  const n = await db.inspecoes.count();
-  const ok = await confirmar('Apagar dados de inspeção', `Apagar <b>${fmtInt(n)}</b> registro(s) de inspeção? Cadastros e configurações são preservados. Esta ação não pode ser desfeita.`);
+$('cfg-migrar-inspecoes').addEventListener('click', async () => {
+  const ok = await confirmar('Migrar inspeções para o Supabase', 'Lê todas as inspeções gravadas localmente neste navegador e envia ao Supabase, <b>substituindo (por ano)</b> o que já existir lá — mesma regra da Importação normal. Continuar?');
   if (!ok) return;
-  await db.inspecoes.clear(); await refreshCaches();
-  toast('Dados de inspeção apagados.', 'ok');
+  const elProg = $('cfg-progresso-migracao');
+  elProg.style.display = 'block';
+  elProg.textContent = 'Lendo dados locais…';
+  try {
+    const locais = await db.inspecoes.toArray();
+    if (!locais.length) { elProg.style.display = 'none'; toast('Nenhuma inspeção local encontrada para migrar.', ''); return; }
+    const porAno = new Map();
+    for (const r of locais) { if (!porAno.has(r.ano)) porAno.set(r.ano, []); porAno.get(r.ano).push(r); }
+    const paraLinhaSupabase = p => ({ codigo: p.codigo, cod_n: p.codN, ano: p.ano, ano_mes: p.anoMes, semana: p.semana,
+      data: p.data, inspetor: p.inspetor, defeito: p.defeito, quantidade: p.quantidade,
+      operador: p.operador, cod_operador: p.codOperador, turno: p.turno, origem: p.origem });
+    let totalEnviado = 0;
+    const totalGeral = locais.length;
+    for (const [ano, linhasAno] of porAno.entries()) {
+      elProg.textContent = `Ano ${ano}: removendo dados existentes no Supabase…`;
+      const { error: errDel } = await supa.from('inspecoes').delete().eq('ano', ano);
+      if (errDel) throw errDel;
+      const TAMANHO_LOTE = 1000;
+      for (let i = 0; i < linhasAno.length; i += TAMANHO_LOTE) {
+        const lote = linhasAno.slice(i, i + TAMANHO_LOTE).map(paraLinhaSupabase);
+        const { error: errIns } = await supa.from('inspecoes').insert(lote);
+        if (errIns) throw errIns;
+        totalEnviado += lote.length;
+        elProg.textContent = `Enviando… ${fmtInt(totalEnviado)} / ${fmtInt(totalGeral)} (${Math.round(totalEnviado / totalGeral * 100)}%)`;
+      }
+      invalidarCacheInspecoes(ano);
+    }
+    elProg.style.display = 'none';
+    await refreshCaches();
+    toast(`Migração concluída: ${fmtInt(totalEnviado)} registro(s) de inspeção enviados (${fmtInt(porAno.size)} ano(s)).`, 'ok');
+  } catch (err) {
+    console.error('migrarInspecoesParaSupabase:', err);
+    elProg.style.display = 'none';
+    toast('Erro na migração: ' + (err.message || 'falha desconhecida'), 'err');
+  }
 });
-$('cfg-limpar-tudo').addEventListener('click', async () => {
-  const ok = await confirmar('Apagar dados locais', 'Apagar as inspeções e a meta gravadas localmente neste navegador (IndexedDB). Produtos, Operadores, Defeitos e De→Para são compartilhados no Supabase e <b>não são afetados</b> por este botão. Esta ação não pode ser desfeita.');
+$('cfg-limpar-insp').addEventListener('click', async () => {
+  const { count: n } = await supa.from('inspecoes').select('id', { count: 'exact', head: true });
+  const ok = await confirmar('Apagar dados de inspeção', `Apagar <b>${fmtInt(n || 0)}</b> registro(s) de inspeção do Supabase — isso afeta <b>todos os usuários</b>, não só este navegador. Cadastros e configurações são preservados. Esta ação não pode ser desfeita.`);
   if (!ok) return;
-  await Promise.all([db.inspecoes.clear(), db.config.clear()]);
+  const { error } = await supa.from('inspecoes').delete().gt('id', 0);
+  if (error) { toast('Erro ao apagar: ' + (error.message || 'falha desconhecida'), 'err'); return; }
+  inspecoesCache.clear();
   await refreshCaches();
-  toast('Dados locais apagados.', 'ok');
+  toast('Dados de inspeção apagados do Supabase.', 'ok');
 });
 
 /* =====================================================================
