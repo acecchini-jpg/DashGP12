@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.18</title>
+<title>Firewall Management V1.19</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.18</small>
+    <small>MANAGEMENT · V1.19</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -424,12 +424,17 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
     <p class="muted" style="margin-bottom:12px;font-size:12.5px">Registros de inspeção gravam o turno do operador no momento da importação/digitação (fica "congelado" para fins de auditoria). Se algum lote foi importado antes do cadastro de Operadores estar completo, essas linhas ficam presas em "Sem Classificação" mesmo depois de corrigir o cadastro — o que faz o gráfico "Por Turno" divergir da tabela de Performance (que sempre usa o cadastro atual). Este botão corrige isso, atualizando apenas os registros hoje "Sem Classificação" cujo operador já está cadastrado corretamente.</p>
     <button class="btn sec" id="cfg-recalc-turno">Recalcular turnos "Sem Classificação"</button>
   </div>
+  <div class="card" style="max-width:520px">
+    <h3>Migração para o Supabase</h3>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Produtos, Operadores, Defeitos e De→Para agora vivem no Supabase (compartilhados entre todos). Se você já tinha esses cadastros gravados localmente neste navegador antes desta atualização, use o botão abaixo para enviá-los — só adiciona o que ainda não existe lá, pode rodar mais de uma vez com segurança.</p>
+    <button class="btn sec" id="cfg-migrar-cadastros">Migrar Cadastros locais para o Supabase</button>
+  </div>
   <div class="card" style="max-width:520px;border-color:#E8C9C5">
     <h3 style="color:var(--danger)">Zona de risco</h3>
-    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Ações irreversíveis sobre a base local (IndexedDB).</p>
+    <p class="muted" style="margin-bottom:12px;font-size:12.5px">Ações irreversíveis sobre os dados de inspeção locais (IndexedDB). Produtos, Operadores, Defeitos e De→Para agora são compartilhados no Supabase — para apagá-los, use as telas de Cadastro (exclusão item a item), não este botão.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn danger" id="cfg-limpar-insp">Apagar dados de inspeção</button>
-      <button class="btn danger" id="cfg-limpar-tudo">Apagar toda a base</button>
+      <button class="btn danger" id="cfg-limpar-tudo">Apagar dados locais (inspeções + meta)</button>
     </div>
   </div>
 </section>
@@ -441,7 +446,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.18 — SPA local-first (IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.19 — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB) (IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -476,6 +481,9 @@ db.version(2).stores({
 let deParaMap = new Map();      // deKey(lower,trim) -> Para
 let operMap = new Map();        // matricula(str) -> {nome, turno}
 let produtosMap = new Map();    // codigo(str) -> descricao (cache p/ Digitação Rápida)
+let produtosLista = [];         // [{codigo,descricao,cliente,cod_cliente,status}] — vem do Supabase (tabela produtos)
+let operadoresLista = [];       // [{matricula,nome,turno}] — vem do Supabase (tabela operadores)
+let defeitosLista = [];         // [nome] — vem do Supabase (tabela defeitos_catalogo)
 let metaPct = 1.0;              // meta única (%)
 const charts = {};              // instâncias Chart.js
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -483,6 +491,7 @@ const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Ag
 /* ---------- Utilidades ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const jsStr = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); // seguro para usar dentro de onclick="fn('...')"
 const fmtInt = n => Number(n || 0).toLocaleString('pt-BR');
 const fmtPct = (n, d = 2) => Number(n || 0).toLocaleString('pt-BR', {minimumFractionDigits: d, maximumFractionDigits: d}) + '%';
 
@@ -547,11 +556,28 @@ function chipTurno(t) {
 
 /* ---------- Caches ---------- */
 async function refreshCaches() {
-  const [dps, ops, cfg] = await Promise.all([
-    db.deParaDefeitos.toArray(), db.operadores.toArray(), db.config.get('metaPct')
-  ]);
-  deParaMap = new Map(dps.map(r => [r.deKey, r.para]));
-  operMap = new Map(ops.map(r => [String(r.matricula).trim(), { nome: r.nome, turno: r.turno }]));
+  try {
+    const [rProd, rOper, rDef, rDePara] = await Promise.all([
+      supa.from('produtos').select('*').order('codigo'),
+      supa.from('operadores').select('*').order('matricula'),
+      supa.from('defeitos_catalogo').select('*').order('nome'),
+      supa.from('defeitos_de_para').select('*')
+    ]);
+    if (rProd.error) throw rProd.error;
+    if (rOper.error) throw rOper.error;
+    if (rDef.error) throw rDef.error;
+    if (rDePara.error) throw rDePara.error;
+    produtosLista = rProd.data || [];
+    operadoresLista = rOper.data || [];
+    defeitosLista = (rDef.data || []).map(d => d.nome);
+    produtosMap = new Map(produtosLista.map(p => [p.codigo, p.descricao]));
+    operMap = new Map(operadoresLista.map(o => [String(o.matricula).trim(), { nome: o.nome, turno: o.turno }]));
+    deParaMap = new Map((rDePara.data || []).map(r => [r.de_key, r.para]));
+  } catch (err) {
+    console.error('refreshCaches:', err);
+    toast('Erro ao carregar cadastros do Supabase: ' + (err.message || 'falha desconhecida.'), 'err');
+  }
+  const cfg = await db.config.get('metaPct'); // meta continua local (fora desta migração)
   metaPct = cfg ? Number(cfg.valor) : 1.0;
   const n = await db.inspecoes.count();
   $('db-status').textContent = `IndexedDB · ${fmtInt(n)} registros`;
@@ -715,40 +741,59 @@ $('imp-oper-file').addEventListener('change', async e => {
     const head = rows[0].map(c => String(c ?? '').trim().toLowerCase());
     const iMat = head.findIndex(h => h === 'matricula' || h === 'matrícula');
     if (iMat < 0) throw new Error('Colunas Matrícula/Nome/Turno não encontradas na aba ' + aba);
-    let novosOp = 0, mantidos = 0;
+
+    const candidatosOp = []; const vistos = new Set();
     for (let i = 1; i < rows.length; i++) {
       const mat = rows[i][iMat];
       if (mat === null || mat === '') continue;
       const matricula = String(mat).trim();
-      const existe = await db.operadores.where('matricula').equals(matricula).count();
-      if (existe) { mantidos++; continue; }
-      await db.operadores.add({
+      if (vistos.has(matricula)) continue; // evita duplicata dentro da própria planilha
+      vistos.add(matricula);
+      candidatosOp.push({
         matricula,
         nome: String(rows[i][iMat + 1] ?? '').trim(),
         turno: String(rows[i][iMat + 2] ?? 'Sem Classificação').trim() || 'Sem Classificação'
       });
-      novosOp++;
     }
+    let novosOp = 0, mantidos = 0;
+    if (candidatosOp.length) {
+      mantidos = candidatosOp.filter(c => operMap.has(c.matricula)).length;
+      const { data, error } = await supa.from('operadores')
+        .upsert(candidatosOp, { onConflict: 'matricula', ignoreDuplicates: true })
+        .select('matricula');
+      if (error) throw error;
+      novosOp = (data || []).length;
+    }
+
     /* De→Para de defeitos: primeiro par de colunas 'De' | 'Para' */
     let iDe = -1;
     for (let c = 0; c < head.length - 1; c++) { if (head[c] === 'de' && head[c + 1] === 'para') { iDe = c; break; } }
     let mapeados = 0;
     if (iDe >= 0) {
+      const mapaCandidatos = new Map(); const catalogoCandidatos = new Map();
       for (let i = 1; i < rows.length; i++) {
         const de = rows[i][iDe], para = rows[i][iDe + 1];
         if (de === null || de === '' || para === null || para === '') continue;
         const deKey = String(de).trim().toLowerCase();
         const paraTxt = String(para).trim();
         if (!deKey) continue;
-        await db.deParaDefeitos.put({ ...(await db.deParaDefeitos.where('deKey').equals(deKey).first() || {}), deKey, de: String(de).trim(), para: paraTxt });
-        if (!isInspecao(paraTxt)) await db.defeitosCatalogo.put({ ...(await db.defeitosCatalogo.where('nome').equals(paraTxt).first() || {}), nome: paraTxt });
-        mapeados++;
+        mapaCandidatos.set(deKey, { de_key: deKey, de: String(de).trim(), para: paraTxt });
+        if (!isInspecao(paraTxt)) catalogoCandidatos.set(paraTxt, { nome: paraTxt });
+      }
+      if (mapaCandidatos.size) {
+        const { error: errDePara } = await supa.from('defeitos_de_para').upsert([...mapaCandidatos.values()], { onConflict: 'de_key' });
+        if (errDePara) throw errDePara;
+        mapeados = mapaCandidatos.size;
+      }
+      if (catalogoCandidatos.size) {
+        const { error: errCat } = await supa.from('defeitos_catalogo').upsert([...catalogoCandidatos.values()], { onConflict: 'nome', ignoreDuplicates: true });
+        if (errCat) throw errCat;
       }
     }
     await refreshCaches();
     logImp(`[Operadores] ${file.name} → ${novosOp} novo(s), ${mantidos} já existente(s) mantido(s); ${mapeados} mapeamento(s) De→Para de defeitos.`);
     toast(`Operadores: ${novosOp} novos adicionados, ${mantidos} mantidos.`, 'ok');
-  } catch (err) { console.error(err); toast('Erro na importação de operadores: ' + err.message, 'err'); }
+  } catch (err) { console.error(err); toast('Erro na importação de operadores: ' + (err.message || 'falha desconhecida'), 'err'); }
 });
 
 /* --- 2. Produtos (Tabela N) --- */
@@ -758,25 +803,34 @@ $('imp-prod-file').addEventListener('change', async e => {
     const wb = await lerPlanilha(file);
     const aba = acharAba(wb, ['Tabela N', 'TabelaN']) || wb.SheetNames[0];
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
-    let novos = 0, mantidos = 0;
+    const candidatos = []; const vistos = new Set();
     for (let i = 1; i < rows.length; i++) {
       const cod = rows[i][0];
       if (cod === null || cod === '') continue;
       const codigo = String(cod).trim();
-      const existe = await db.produtos.where('codigo').equals(codigo).count();
-      if (existe) { mantidos++; continue; }
-      await db.produtos.add({
+      if (vistos.has(codigo)) continue;
+      vistos.add(codigo);
+      candidatos.push({
         codigo,
         descricao: String(rows[i][1] ?? '').trim(),
         cliente: String(rows[i][2] ?? '').trim(),
-        codCliente: String(rows[i][3] ?? '').trim(),
+        cod_cliente: String(rows[i][3] ?? '').trim(),
         status: String(rows[i][4] ?? '').trim()
       });
-      novos++;
     }
+    let novos = 0, mantidos = 0;
+    if (candidatos.length) {
+      mantidos = candidatos.filter(c => produtosMap.has(c.codigo)).length;
+      const { data, error } = await supa.from('produtos')
+        .upsert(candidatos, { onConflict: 'codigo', ignoreDuplicates: true })
+        .select('codigo');
+      if (error) throw error;
+      novos = (data || []).length;
+    }
+    await refreshCaches();
     logImp(`[Produtos] ${file.name} → ${novos} novo(s), ${mantidos} já existente(s) mantido(s).`);
     toast(`Produtos: ${novos} novos adicionados, ${mantidos} mantidos.`, 'ok');
-  } catch (err) { console.error(err); toast('Erro na importação de produtos: ' + err.message, 'err'); }
+  } catch (err) { console.error(err); toast('Erro na importação de produtos: ' + (err.message || 'falha desconhecida'), 'err'); }
 });
 
 /* --- 3. Dados de inspeção (aba "Dados", colunas A–L, filtro por ano) --- */
@@ -842,10 +896,10 @@ $('imp-dados-file').addEventListener('change', async e => {
     const finais = parsed.filter(p => p.ano === anoSel);
     for (let i = 0; i < finais.length; i += 2000) await db.inspecoes.bulkAdd(finais.slice(i, i + 2000));
     /* Alimenta catálogo de defeitos com nomes normalizados */
-    const nomes = new Set(finais.map(p => normDefeito(p.defeito)).filter(n => n && !isInspecao(n)));
-    for (const nome of nomes) {
-      const ex = await db.defeitosCatalogo.where('nome').equals(nome).count();
-      if (!ex) await db.defeitosCatalogo.add({ nome });
+    const nomes = [...new Set(finais.map(p => normDefeito(p.defeito)).filter(n => n && !isInspecao(n)))];
+    if (nomes.length) {
+      const { error: errCat } = await supa.from('defeitos_catalogo').upsert(nomes.map(nome => ({ nome })), { onConflict: 'nome', ignoreDuplicates: true });
+      if (errCat) console.error('Erro ao atualizar catálogo de defeitos:', errCat);
     }
     await refreshCaches();
     logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(finais.length)} registro(s) importado(s) integralmente (sem desduplicação).`);
@@ -858,10 +912,7 @@ $('imp-dados-file').addEventListener('change', async e => {
 ===================================================================== */
 async function initDigitacao() {
   if (!$('dr-data').value) $('dr-data').value = new Date().toISOString().slice(0, 10);
-  const [prods, ops, defs] = await Promise.all([
-    db.produtos.orderBy('codigo').toArray(), db.operadores.orderBy('matricula').toArray(), db.defeitosCatalogo.orderBy('nome').toArray()
-  ]);
-  produtosMap = new Map(prods.map(p => [p.codigo, p.descricao]));
+  const prods = produtosLista, ops = operadoresLista, defs = defeitosLista.map(nome => ({ nome }));
   $('dr-produto-list').innerHTML = prods.map(p => `<option value="${esc(p.codigo)}">${esc(p.codigo)}${p.descricao ? ' — ' + esc(p.descricao) : ''}</option>`).join('');
   $('dr-operador-list').innerHTML = ops.map(o => `<option value="${esc(o.matricula)}">${esc(o.matricula)} — ${esc(o.nome)} (${esc(o.turno)})</option>`).join('');
   const grid = $('dr-defeitos');
@@ -1078,7 +1129,7 @@ async function popularCodigosD1(termo) {
   const ano = Number($('d1-ano').value);
   const rows = ano ? await db.inspecoes.where('ano').equals(ano).toArray() : [];
   const cods = [...new Set(rows.map(r => codN(r)))].filter(Boolean).sort();
-  const prods = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const prods = produtosMap;
   let opts = cods.map(c => ({ c, desc: prods.get(c) || '' }));
   if (termo) opts = opts.filter(o => o.c.toLowerCase().includes(termo) || o.desc.toLowerCase().includes(termo));
   const sel = $('d1-codigo'), atual = sel.value;
@@ -1266,7 +1317,7 @@ async function renderDash1() {
      não a soma de peças. O clique (Produtos/Defeitos) continua filtrando o dashboard. */
   const porOcorrencia = modo === 'ocor';
   const tituloEixoYParetos = porOcorrencia ? 'Ocorrências' : 'Quantidade';
-  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const prodsMap = produtosMap;
   const porProdTurno = agrupaTurnoPorChave(effectiveRows, r => codN(r), porOcorrencia);
   desenharParetoEmpilhado('d2-chart-prod', porProdTurno, topN, { mapLabel: c => prodsMap.get(c), onBarClick: filtrarPorProduto, tituloEixoY: tituloEixoYParetos });
 
@@ -1523,7 +1574,7 @@ async function apRenderDirecao1(ano, mes, topN, janela) {
   const gFW = agrupa(rowsFW);
   let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
   if (topN > 0) itens = itens.slice(0, topN);
-  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const prodsMap = produtosMap;
 
   const linhas = itens.map(([codigo, o]) => {
     const datasDefeitoFW = rowsFW.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
@@ -1751,7 +1802,7 @@ async function sqRenderDirecao1(ano, mes, topN, janela) {
   const gFW = agrupa(rowsFW);
   let itens = [...gFW.porCodigo.entries()].filter(([, o]) => o.def > 0).sort((a, b) => b[1].def - a[1].def);
   if (topN > 0) itens = itens.slice(0, topN);
-  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const prodsMap = produtosMap;
 
   const linhas = itens.map(([codigo, o]) => {
     const datasDefeitoFW = rowsFW.filter(r => codN(r) === codigo && !isInspecao(normDefeito(r.defeito))).map(r => r.data);
@@ -1789,7 +1840,7 @@ async function sqRenderDirecao2(ano, mes, topN, janela, metrica) {
   });
   if (topN > 0) itens = itens.slice(0, topN);
 
-  const prodsMap = new Map((await db.produtos.toArray()).map(p => [p.codigo, p.descricao]));
+  const prodsMap = produtosMap;
   const rowsFWAno = await db.inspecoes.where('ano').equals(ano).toArray();
 
   const linhas = itens.map(([codigo, linhasScrap]) => {
@@ -1816,12 +1867,14 @@ async function sqRenderDirecao2(ano, mes, topN, janela, metrica) {
 /* ---- Produtos ---- */
 async function renderProdutos() {
   const busca = ($('cp-busca').value || '').toLowerCase();
-  let rows = await db.produtos.orderBy('codigo').toArray();
+  const { data, error } = await supa.from('produtos').select('*').order('codigo');
+  if (error) { toast('Erro ao carregar produtos: ' + error.message, 'err'); return; }
+  let rows = data || [];
   if (busca) rows = rows.filter(p => (p.codigo + ' ' + p.descricao + ' ' + p.cliente).toLowerCase().includes(busca));
   $('cp-tbody').innerHTML = rows.length ? rows.map(p => `<tr>
     <td class="mono">${esc(p.codigo)}</td><td>${esc(p.descricao)}</td><td>${esc(p.cliente)}</td>
-    <td class="mono">${esc(p.codCliente)}</td><td>${esc(p.status)}</td>
-    <td class="actions"><button class="btn sm sec" onclick="editarProduto(${p.id})">Editar</button> <button class="btn sm danger" onclick="excluirProduto(${p.id})">Excluir</button></td>
+    <td class="mono">${esc(p.cod_cliente)}</td><td>${esc(p.status)}</td>
+    <td class="actions"><button class="btn sm sec" onclick="editarProduto('${jsStr(p.codigo)}')">Editar</button> <button class="btn sm danger" onclick="excluirProduto('${jsStr(p.codigo)}')">Excluir</button></td>
   </tr>`).join('') : '<tr><td colspan="6" class="empty">Nenhum produto cadastrado.</td></tr>';
 }
 $('cp-busca').addEventListener('input', renderProdutos);
@@ -1829,36 +1882,42 @@ function formProduto(p = {}) {
   return `<div class="field"><label>Código *</label><input data-f="codigo" value="${esc(p.codigo || '')}" class="mono"></div>
     <div class="field"><label>Descrição</label><input data-f="descricao" value="${esc(p.descricao || '')}"></div>
     <div class="field"><label>Cliente</label><input data-f="cliente" value="${esc(p.cliente || '')}"></div>
-    <div class="field"><label>Cod Cliente</label><input data-f="codCliente" value="${esc(p.codCliente || '')}" class="mono"></div>
+    <div class="field"><label>Cod Cliente</label><input data-f="codCliente" value="${esc(p.cod_cliente || '')}" class="mono"></div>
     <div class="field"><label>Status</label><input data-f="status" value="${esc(p.status || '')}"></div>`;
 }
 $('cp-novo').addEventListener('click', async () => {
   const r = await openModal('Novo produto', formProduto(), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.codigo.trim()) { toast('Código é obrigatório.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.produtos.add({ codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), codCliente: r.dados.codCliente.trim(), status: r.dados.status.trim() }); toast('Produto cadastrado.', 'ok'); renderProdutos(); }
-  catch { toast('Já existe um produto com este código.', 'err'); }
+  const { error } = await supa.from('produtos').insert({ codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), cod_cliente: r.dados.codCliente.trim(), status: r.dados.status.trim() });
+  if (error) { toast(error.code === '23505' ? 'Já existe um produto com este código.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Produto cadastrado.', 'ok'); renderProdutos();
 });
-async function editarProduto(id) {
-  const p = await db.produtos.get(id); if (!p) return;
+async function editarProduto(codigoOriginal) {
+  const p = produtosLista.find(x => x.codigo === codigoOriginal); if (!p) return;
   const r = await openModal('Editar produto', formProduto(p), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.codigo.trim()) { toast('Código é obrigatório.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.produtos.update(id, { codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), codCliente: r.dados.codCliente.trim(), status: r.dados.status.trim() }); toast('Produto atualizado.', 'ok'); renderProdutos(); }
-  catch { toast('Já existe um produto com este código.', 'err'); }
+  const { error } = await supa.from('produtos').update({ codigo: r.dados.codigo.trim(), descricao: r.dados.descricao.trim(), cliente: r.dados.cliente.trim(), cod_cliente: r.dados.codCliente.trim(), status: r.dados.status.trim() }).eq('codigo', codigoOriginal);
+  if (error) { toast(error.code === '23505' ? 'Já existe um produto com este código.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Produto atualizado.', 'ok'); renderProdutos();
 }
-async function excluirProduto(id) {
+async function excluirProduto(codigo) {
   const ok = await confirmar('Excluir produto', 'Excluir este produto do cadastro? Os registros de inspeção existentes não são afetados.');
   if (!ok) return;
-  await db.produtos.delete(id); toast('Produto excluído.', 'ok'); renderProdutos();
+  const { error } = await supa.from('produtos').delete().eq('codigo', codigo);
+  if (error) { toast('Erro ao excluir: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Produto excluído.', 'ok'); renderProdutos();
 }
 
 /* ---- Operadores ---- */
 async function renderOperadores() {
   const busca = ($('co-busca').value || '').toLowerCase();
-  let rows = await db.operadores.orderBy('matricula').toArray();
+  const { data, error } = await supa.from('operadores').select('*').order('matricula');
+  if (error) { toast('Erro ao carregar operadores: ' + error.message, 'err'); return; }
+  let rows = data || [];
   if (busca) rows = rows.filter(o => (o.matricula + ' ' + o.nome).toLowerCase().includes(busca));
   $('co-tbody').innerHTML = rows.length ? rows.map(o => `<tr>
     <td class="mono">${esc(o.matricula)}</td><td>${esc(o.nome)}</td><td>${chipTurno(o.turno)}</td>
-    <td class="actions"><button class="btn sm sec" onclick="editarOperador(${o.id})">Editar</button> <button class="btn sm danger" onclick="excluirOperador(${o.id})">Excluir</button></td>
+    <td class="actions"><button class="btn sm sec" onclick="editarOperador('${jsStr(o.matricula)}')">Editar</button> <button class="btn sm danger" onclick="excluirOperador('${jsStr(o.matricula)}')">Excluir</button></td>
   </tr>`).join('') : '<tr><td colspan="4" class="empty">Nenhum operador cadastrado.</td></tr>';
 }
 $('co-busca').addEventListener('input', renderOperadores);
@@ -1872,30 +1931,36 @@ function formOperador(o = {}) {
 $('co-novo').addEventListener('click', async () => {
   const r = await openModal('Novo operador', formOperador(), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.matricula.trim()) { toast('Matrícula é obrigatória.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.operadores.add({ matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno }); await refreshCaches(); toast('Operador cadastrado.', 'ok'); renderOperadores(); }
-  catch { toast('Já existe um operador com esta matrícula.', 'err'); }
+  const { error } = await supa.from('operadores').insert({ matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno });
+  if (error) { toast(error.code === '23505' ? 'Já existe um operador com esta matrícula.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Operador cadastrado.', 'ok'); renderOperadores();
 });
-async function editarOperador(id) {
-  const o = await db.operadores.get(id); if (!o) return;
+async function editarOperador(matriculaOriginal) {
+  const o = operadoresLista.find(x => x.matricula === matriculaOriginal); if (!o) return;
   const r = await openModal('Editar operador', formOperador(o), [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.matricula.trim()) { toast('Matrícula é obrigatória.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.operadores.update(id, { matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno }); await refreshCaches(); toast('Operador atualizado. Registros já gravados mantêm o turno congelado.', 'ok'); renderOperadores(); }
-  catch { toast('Já existe um operador com esta matrícula.', 'err'); }
+  const { error } = await supa.from('operadores').update({ matricula: r.dados.matricula.trim(), nome: r.dados.nome.trim(), turno: r.dados.turno }).eq('matricula', matriculaOriginal);
+  if (error) { toast(error.code === '23505' ? 'Já existe um operador com esta matrícula.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Operador atualizado. Registros já gravados mantêm o turno congelado.', 'ok'); renderOperadores();
 }
-async function excluirOperador(id) {
+async function excluirOperador(matricula) {
   const ok = await confirmar('Excluir operador', 'Excluir este operador do cadastro? Os registros de inspeção existentes não são afetados.');
   if (!ok) return;
-  await db.operadores.delete(id); await refreshCaches(); toast('Operador excluído.', 'ok'); renderOperadores();
+  const { error } = await supa.from('operadores').delete().eq('matricula', matricula);
+  if (error) { toast('Erro ao excluir: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Operador excluído.', 'ok'); renderOperadores();
 }
 
 /* ---- Defeitos ---- */
 async function renderDefeitos() {
   const busca = ($('cd-busca').value || '').toLowerCase();
-  let rows = await db.defeitosCatalogo.orderBy('nome').toArray();
+  const { data, error } = await supa.from('defeitos_catalogo').select('*').order('nome');
+  if (error) { toast('Erro ao carregar defeitos: ' + error.message, 'err'); return; }
+  let rows = data || [];
   if (busca) rows = rows.filter(d => d.nome.toLowerCase().includes(busca));
   $('cd-tbody').innerHTML = rows.length ? rows.map(d => `<tr>
     <td>${esc(d.nome)}</td>
-    <td class="actions"><button class="btn sm sec" onclick="editarDefeito(${d.id})">Editar</button> <button class="btn sm danger" onclick="excluirDefeito(${d.id})">Excluir</button></td>
+    <td class="actions"><button class="btn sm sec" onclick="editarDefeito('${jsStr(d.nome)}')">Editar</button> <button class="btn sm danger" onclick="excluirDefeito('${jsStr(d.nome)}')">Excluir</button></td>
   </tr>`).join('') : '<tr><td colspan="2" class="empty">Nenhum defeito cadastrado.</td></tr>';
 }
 $('cd-busca').addEventListener('input', renderDefeitos);
@@ -1903,21 +1968,25 @@ $('cd-novo').addEventListener('click', async () => {
   const r = await openModal('Novo defeito', `<div class="field"><label>Nome do defeito *</label><input data-f="nome"></div>`,
     [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: d => { if (!d.nome.trim()) { toast('Nome é obrigatório.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.defeitosCatalogo.add({ nome: r.dados.nome.trim() }); toast('Defeito cadastrado.', 'ok'); renderDefeitos(); }
-  catch { toast('Este defeito já existe.', 'err'); }
+  const { error } = await supa.from('defeitos_catalogo').insert({ nome: r.dados.nome.trim() });
+  if (error) { toast(error.code === '23505' ? 'Este defeito já existe.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Defeito cadastrado.', 'ok'); renderDefeitos();
 });
-async function editarDefeito(id) {
-  const d = await db.defeitosCatalogo.get(id); if (!d) return;
+async function editarDefeito(nomeOriginal) {
+  const d = defeitosLista.includes(nomeOriginal) ? { nome: nomeOriginal } : null; if (!d) return;
   const r = await openModal('Editar defeito', `<div class="field"><label>Nome do defeito *</label><input data-f="nome" value="${esc(d.nome)}"></div>`,
     [{ rotulo: 'Cancelar', classe: 'sec', acao: 'x' }, { rotulo: 'Salvar', acao: 'ok', valida: v => { if (!v.nome.trim()) { toast('Nome é obrigatório.', 'err'); return false; } return true; } }]);
   if (r.acao !== 'ok') return;
-  try { await db.defeitosCatalogo.update(id, { nome: r.dados.nome.trim() }); toast('Defeito atualizado.', 'ok'); renderDefeitos(); }
-  catch { toast('Este defeito já existe.', 'err'); }
+  const { error } = await supa.from('defeitos_catalogo').update({ nome: r.dados.nome.trim() }).eq('nome', nomeOriginal);
+  if (error) { toast(error.code === '23505' ? 'Este defeito já existe.' : 'Erro ao salvar: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Defeito atualizado.', 'ok'); renderDefeitos();
 }
-async function excluirDefeito(id) {
+async function excluirDefeito(nome) {
   const ok = await confirmar('Excluir defeito', 'Excluir este defeito do catálogo? Os registros de inspeção existentes não são afetados.');
   if (!ok) return;
-  await db.defeitosCatalogo.delete(id); toast('Defeito excluído.', 'ok'); renderDefeitos();
+  const { error } = await supa.from('defeitos_catalogo').delete().eq('nome', nome);
+  if (error) { toast('Erro ao excluir: ' + error.message, 'err'); return; }
+  await refreshCaches(); toast('Defeito excluído.', 'ok'); renderDefeitos();
 }
 
 /* =====================================================================
@@ -1949,6 +2018,45 @@ $('cfg-recalc-turno').addEventListener('click', async () => {
   await refreshCaches();
   toast(`${fmtInt(atualizados)} registro(s) atualizado(s). Recarregue o Dashboard para ver o gráfico "Por Turno" corrigido.`, 'ok');
 });
+$('cfg-migrar-cadastros').addEventListener('click', async () => {
+  const ok = await confirmar('Migrar Cadastros para o Supabase', 'Lê os Produtos, Operadores, Defeitos e De→Para gravados localmente neste navegador e envia para o Supabase, mantendo o que já existir lá (só adiciona o que faltar). Continuar?');
+  if (!ok) return;
+  try {
+    const [prods, ops, defs, depara] = await Promise.all([
+      db.produtos.toArray(), db.operadores.toArray(), db.defeitosCatalogo.toArray(), db.deParaDefeitos.toArray()
+    ]);
+    let nProd = 0, nOp = 0, nDef = 0, nDePara = 0;
+    if (prods.length) {
+      const linhas = prods.map(p => ({ codigo: p.codigo, descricao: p.descricao || '', cliente: p.cliente || '', cod_cliente: p.codCliente || '', status: p.status || '' }));
+      const { data, error } = await supa.from('produtos').upsert(linhas, { onConflict: 'codigo', ignoreDuplicates: true }).select('codigo');
+      if (error) throw error;
+      nProd = (data || []).length;
+    }
+    if (ops.length) {
+      const linhas = ops.map(o => ({ matricula: o.matricula, nome: o.nome || '', turno: o.turno || 'Sem Classificação' }));
+      const { data, error } = await supa.from('operadores').upsert(linhas, { onConflict: 'matricula', ignoreDuplicates: true }).select('matricula');
+      if (error) throw error;
+      nOp = (data || []).length;
+    }
+    if (defs.length) {
+      const linhas = defs.map(d => ({ nome: d.nome }));
+      const { data, error } = await supa.from('defeitos_catalogo').upsert(linhas, { onConflict: 'nome', ignoreDuplicates: true }).select('nome');
+      if (error) throw error;
+      nDef = (data || []).length;
+    }
+    if (depara.length) {
+      const linhas = depara.map(r => ({ de_key: r.deKey, de: r.de, para: r.para }));
+      const { error } = await supa.from('defeitos_de_para').upsert(linhas, { onConflict: 'de_key' });
+      if (error) throw error;
+      nDePara = linhas.length;
+    }
+    await refreshCaches();
+    toast(`Migração concluída: ${fmtInt(nProd)} produto(s), ${fmtInt(nOp)} operador(es), ${fmtInt(nDef)} defeito(s) novo(s), ${fmtInt(nDePara)} mapeamento(s) De→Para enviados.`, 'ok');
+  } catch (err) {
+    console.error('migrarCadastrosParaSupabase:', err);
+    toast('Erro na migração: ' + (err.message || 'falha desconhecida'), 'err');
+  }
+});
 $('cfg-limpar-insp').addEventListener('click', async () => {
   const n = await db.inspecoes.count();
   const ok = await confirmar('Apagar dados de inspeção', `Apagar <b>${fmtInt(n)}</b> registro(s) de inspeção? Cadastros e configurações são preservados. Esta ação não pode ser desfeita.`);
@@ -1957,11 +2065,11 @@ $('cfg-limpar-insp').addEventListener('click', async () => {
   toast('Dados de inspeção apagados.', 'ok');
 });
 $('cfg-limpar-tudo').addEventListener('click', async () => {
-  const ok = await confirmar('Apagar toda a base', 'Apagar <b>TODOS</b> os dados: inspeções, produtos, operadores, defeitos, De→Para e configurações. Esta ação não pode ser desfeita.');
+  const ok = await confirmar('Apagar dados locais', 'Apagar as inspeções e a meta gravadas localmente neste navegador (IndexedDB). Produtos, Operadores, Defeitos e De→Para são compartilhados no Supabase e <b>não são afetados</b> por este botão. Esta ação não pode ser desfeita.');
   if (!ok) return;
-  await Promise.all([db.inspecoes.clear(), db.produtos.clear(), db.operadores.clear(), db.defeitosCatalogo.clear(), db.deParaDefeitos.clear(), db.config.clear()]);
+  await Promise.all([db.inspecoes.clear(), db.config.clear()]);
   await refreshCaches();
-  toast('Base apagada.', 'ok');
+  toast('Dados locais apagados.', 'ok');
 });
 
 /* =====================================================================
