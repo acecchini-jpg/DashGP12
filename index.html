@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.20</title>
+<title>Firewall Management V1.21</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.20</small>
+    <small>MANAGEMENT · V1.21</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -447,7 +447,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.20 — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.21 — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -884,7 +884,7 @@ $('imp-dados-file').addEventListener('change', async e => {
          </div>`
       : (semTurno ? `<p style="color:var(--warn);font-size:12.5px;margin-top:10px">${fmtInt(semTurno)} registro(s) sem operador correspondente no cadastro ficarão "Sem Classificação".</p>` : '');
     const res = await openModal('Importar dados de inspeção',
-      `<p style="font-size:13.5px;margin-bottom:12px">Arquivo lido: <b>${esc(file.name)}</b> · aba <b class="mono">${esc(aba)}</b>. Todas as linhas serão importadas integralmente (duplicatas preservadas).</p>
+      `<p style="font-size:13.5px;margin-bottom:12px">Arquivo lido: <b>${esc(file.name)}</b> · aba <b class="mono">${esc(aba)}</b>. <b>Isso substitui</b> todos os dados de inspeção já existentes para o ano escolhido pelos desta planilha (linhas duplicadas dentro da própria planilha continuam sendo preservadas normalmente).</p>
        <div class="field"><label>Importar dados do ano</label><select data-f="ano">${opts}</select></div>${aviso}`,
       [{ rotulo: 'Cancelar', classe: 'sec', acao: 'cancel' },
        { rotulo: 'Importar', acao: 'ok', valida: () => {
@@ -897,6 +897,8 @@ $('imp-dados-file').addEventListener('change', async e => {
     if (res.acao !== 'ok') return;
     const anoSel = Number(res.dados.ano);
     const finais = parsed.filter(p => p.ano === anoSel);
+    const existentesAntes = await db.inspecoes.where('ano').equals(anoSel).count();
+    await db.inspecoes.where('ano').equals(anoSel).delete();
     for (let i = 0; i < finais.length; i += 2000) await db.inspecoes.bulkAdd(finais.slice(i, i + 2000));
     /* Alimenta catálogo de defeitos com nomes normalizados */
     const nomes = [...new Set(finais.map(p => normDefeito(p.defeito)).filter(n => n && !isInspecao(n)))];
@@ -905,8 +907,8 @@ $('imp-dados-file').addEventListener('change', async e => {
       if (errCat) console.error('Erro ao atualizar catálogo de defeitos:', errCat);
     }
     await refreshCaches();
-    logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(finais.length)} registro(s) importado(s) integralmente (sem desduplicação).`);
-    toast(`${fmtInt(finais.length)} registros de ${anoSel} importados.`, 'ok');
+    logImp(`[Dados] ${file.name} → ano ${anoSel}: ${fmtInt(existentesAntes)} registro(s) antigo(s) substituído(s) por ${fmtInt(finais.length)} novo(s) (duplicatas dentro da própria planilha preservadas).`);
+    toast(`${fmtInt(finais.length)} registros de ${anoSel} importados, substituindo os ${fmtInt(existentesAntes)} anteriores.`, 'ok');
   } catch (err) { console.error(err); toast('Erro na importação de dados: ' + err.message, 'err'); }
 });
 
