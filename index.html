@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.22</title>
+<title>Firewall Management V1.23</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.22</small>
+    <small>MANAGEMENT · V1.23</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -452,7 +452,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.22 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.23 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1314,6 +1314,12 @@ async function renderDash1() {
   ];
   if (modo === 'pct') dsHistorico.push({ type: 'line', label: `Meta (${fmtPct(metaPct)})`, data: meses12.map(() => metaPct), yAxisID: 'yPct',
     borderColor: '#D4A017', borderDash: [6, 5], pointRadius: 0, borderWidth: 2, order: 1, datalabels: { display: false } });
+  /* Eixo Y (esquerdo) com teto ~2x o maior valor plotado (incluindo a Meta, se visível), pra linha
+     ficar desenhada mais no meio do gráfico em vez de encostar no topo nos meses de pico. */
+  const valoresPrincipais = gPorMes.map(valMes).filter(v => v != null);
+  const maxPrincipal = valoresPrincipais.length ? Math.max(...valoresPrincipais) : 0;
+  const baseEixoPct = Math.max(maxPrincipal, modo === 'pct' ? metaPct : 0);
+  const maxEixoPct = baseEixoPct > 0 ? baseEixoPct * 2 : undefined;
   renderChart('d1-chart-meta', {
     data: { labels: meses12.map(j => MESES[j.mes - 1].slice(0, 3)), datasets: dsHistorico },
     options: { responsive: true, maintainAspectRatio: false,
@@ -1322,7 +1328,7 @@ async function renderDash1() {
       onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtModo(c.parsed.y)) } } },
       scales: {
-        yPct: { beginAtZero: true, position: 'left', ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } },
+        yPct: { beginAtZero: true, position: 'left', suggestedMax: maxEixoPct, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } },
         yPct2: { stacked: true, beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
       } }
   });
