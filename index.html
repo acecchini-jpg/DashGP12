@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.24</title>
+<title>Firewall Management V1.25</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.24</small>
+    <small>MANAGEMENT · V1.25</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -452,7 +452,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.24 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.25 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -1299,17 +1299,19 @@ async function renderDash1() {
   const labelPrincipal = modo === 'qtd' ? 'Quantidade de defeitos' : modo === 'ocor' ? 'Ocorrências de defeito' : '% peças com defeito';
   const fmtModo = v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v);
   const somaInspecionadas = rows => rows.reduce((s, r) => isInspecao(normDefeito(r.defeito)) ? s + (Number(r.quantidade) || 0) : s, 0);
-  const insp245PorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() === '245')));
-  const inspOutrosPorMes = rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() !== '245')));
+  const ultimoIdxComDados = gPorMes.reduce((acc, g, i) => g.insp > 0 ? i : acc, -1); // último mês com QUALQUER inspeção no ano
+  const truncarFuturo = arr => arr.map((v, i) => i > ultimoIdxComDados ? null : v); // meses depois disso viram null, não 0 — evita a área "deslizar" suavemente até zero em meses sem dado nenhum
+  const insp245PorMes = truncarFuturo(rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() === '245'))));
+  const inspOutrosPorMes = truncarFuturo(rowsPorMes.map(rs => somaInspecionadas(rs.filter(r => String(r.inspetor || '').trim() !== '245'))));
   const dsHistorico = [
-    { type: 'line', label: 'Amostragem', data: insp245PorMes, yAxisID: 'yPct2', stack: 'insp',
+    { type: 'line', label: 'Amostragem', data: insp245PorMes, spanGaps: false, yAxisID: 'yPct2', stack: 'insp',
       borderColor: 'transparent', backgroundColor: 'rgba(79,124,255,.38)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
-    { type: 'line', label: 'Peças Inspecionadas', data: inspOutrosPorMes, yAxisID: 'yPct2', stack: 'insp',
+    { type: 'line', label: 'Peças Inspecionadas', data: inspOutrosPorMes, spanGaps: false, yAxisID: 'yPct2', stack: 'insp',
       borderColor: 'transparent', backgroundColor: 'rgba(139,149,176,.28)', fill: true, tension: .3, pointRadius: 0, order: 0,
       datalabels: { display: false } },
     { type: 'line', label: labelPrincipal, data: gPorMes.map(valMes), spanGaps: false, yAxisID: 'yPct',
-      borderColor: '#3A6EF0', backgroundColor: '#3A6EF0', borderWidth: 2, pointRadius: 3, tension: 0, order: 2,
+      borderColor: '#3A6EF0', backgroundColor: '#3A6EF0', borderWidth: 2, pointRadius: 3, tension: .25, order: 2,
       datalabels: { display: true, align: 'top', offset: 4, formatter: v => v == null ? '' : fmtModo(v), color: '#1A1F2E', font: { size: 9, weight: 600 } } }
   ];
   if (modo === 'pct') dsHistorico.push({ type: 'line', label: `Meta (${fmtPct(metaPct)})`, data: meses12.map(() => metaPct), yAxisID: 'yPct',
@@ -1326,7 +1328,7 @@ async function renderDash1() {
       interaction: { mode: 'index', intersect: false },
       onClick: (evt, elements) => { if (!elements.length) return; const mesClicado = meses12[elements[0].index].mes; if (Number($('d1-mes').value) === mesClicado) return; $('d1-mes').value = mesClicado; renderDash1(); },
       onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + fmtInt(c.parsed.y) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtModo(c.parsed.y)) } } },
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'yPct2' ? c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtInt(c.parsed.y)) : c.dataset.label + ': ' + (c.parsed.y == null ? 'sem dados' : fmtModo(c.parsed.y)) } } },
       scales: {
         yPct: { beginAtZero: true, position: 'left', suggestedMax: maxEixoPct, ticks: { callback: v => modo === 'pct' ? fmtPct(v, 1) : fmtInt(v) } },
         yPct2: { stacked: true, beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => fmtInt(v) } }
