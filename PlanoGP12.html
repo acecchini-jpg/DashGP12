@@ -179,7 +179,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
 <div id="auth-gate">
   <div id="auth-box">
     <h1>PROGRAMA DE INSPEÇÃO<span>GP12 · LOGÍSTICA · PRODUÇÃO</span></h1>
-    <div class="field" style="margin-top:18px"><label>E-mail</label><input type="text" id="auth-email" autocomplete="username" placeholder="nome_logistica  ou  e-mail completo"></div>
+    <div class="field" style="margin-top:18px"><label>E-mail</label><input type="text" id="auth-email" autocomplete="username" placeholder="seunome_gp12  ou  gp12"></div>
     <div class="field"><label>Senha</label><input type="password" id="auth-senha" autocomplete="current-password"></div>
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
@@ -500,16 +500,25 @@ function nomeDoUsuario(email){
   return partes.slice(0, -1).join(' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 async function authEntrar(){
-  let email = $('auth-email').value.trim(); const senha = $('auth-senha').value;
-  if(email && !email.includes('@')) email += '@' + DOMINIO_PADRAO;   // "marcos_logistica" -> marcos_logistica@roechling.com
-  if(!email || !senha){ $('auth-status').textContent = 'Preencha e-mail e senha.'; return; }
+  let digitado = $('auth-email').value.trim().toLowerCase(); const senha = $('auth-senha').value;
+  if(!digitado || !senha){ $('auth-status').textContent = 'Preencha e-mail e senha.'; return; }
+  if(!digitado.includes('@')) digitado += '@' + DOMINIO_PADRAO;
+  // "marcos_gp12@roechling.com" entra na conta compartilhada "gp12@roechling.com", mas fica registrado quem digitou.
+  const [local, dominio] = digitado.split('@');
+  const conta = local.split('_').pop() + '@' + dominio;
   $('auth-status').textContent = 'Entrando…';
-  const { data, error } = await supa.auth.signInWithPassword({ email, password: senha });
-  if(error){ $('auth-status').innerHTML = `<span style="color:var(--danger)">${error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : error.message}</span>`; return; }
+  let r = await supa.auth.signInWithPassword({ email: conta, password: senha });
+  let contaUsada = conta;
+  if(r.error && conta !== digitado){   // plano B: pode existir uma conta individual com o e-mail completo
+    const r2 = await supa.auth.signInWithPassword({ email: digitado, password: senha });
+    if(!r2.error){ r = r2; contaUsada = digitado; }
+  }
+  if(r.error){ $('auth-status').innerHTML = `<span style="color:var(--danger)">${r.error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : r.error.message}</span>`; return; }
+  try{ localStorage.setItem('pp_ident', JSON.stringify({ conta: contaUsada, ident: digitado })); }catch(e){}
   $('auth-senha').value = '';
-  await authAposLogin(data.user, true);
+  await authAposLogin(r.data.user, true, digitado);
 }
-async function authAposLogin(user, registrar){
+async function authAposLogin(user, registrar, ident){
   $('auth-status').textContent = 'Carregando perfil…';
   const { data: perfil, error } = await supa.from('perfis').select('nivel').eq('id', user.id).single();
   if(error || !perfil || !PAPEIS[Number(perfil.nivel)]){
@@ -517,20 +526,25 @@ async function authAposLogin(user, registrar){
     await supa.auth.signOut();
     return;
   }
-  usuarioAtual = { id:user.id, email:user.email };
+  if(!ident){   // sessão restaurada: recupera o nome digitado no último login, se for da mesma conta
+    try{ const g = JSON.parse(localStorage.getItem('pp_ident') || 'null'); if(g && g.conta === user.email) ident = g.ident; }catch(e){}
+  }
+  ident = ident || user.email;
+  usuarioAtual = { id:user.id, email:user.email, ident };
   nivelUsuario = Number(perfil.nivel);
   montarNav();
-  $('auth-quem').textContent = `${nomeDoUsuario(user.email) || user.email} · ${PAPEIS[nivelUsuario].nome}`;
-  $('auth-quem').title = user.email;
+  $('auth-quem').textContent = `${nomeDoUsuario(ident) || ident} · ${PAPEIS[nivelUsuario].nome}`;
+  $('auth-quem').title = ident + (ident !== user.email ? ' (conta ' + user.email + ')' : '');
   $('auth-gate').classList.add('hidden');
   $('db-status').textContent = 'Supabase: conectado';
-  if(registrar) await registrarLog('login', null, null, { perfil: PAPEIS[nivelUsuario].nome });   // só login digitado, não a sessão restaurada
+  if(registrar) await registrarLog('login', null, null, { perfil: PAPEIS[nivelUsuario].nome, conta: user.email });   // só login digitado, não a sessão restaurada
   await iniciarAppPosLogin();
 }
 async function authSair(){
   try{ if(usuarioAtual) await registrarLog('logout', null, null, null); }catch(e){}
   try{ await supa.auth.signOut(); }catch(e){}
   usuarioAtual = null; nivelUsuario = null;
+  try{ localStorage.removeItem('pp_ident'); }catch(e){}
   $('auth-email').value=''; $('auth-senha').value=''; $('auth-status').textContent='';
   $('auth-gate').classList.remove('hidden');
 }
@@ -672,7 +686,7 @@ async function registrarLog(acao, item, antes, depois){
   try{
     await supa.from('pp_logs').insert({
       item_id: item?.id || null,
-      acao, usuario: usuarioAtual.email,
+      acao, usuario: usuarioAtual.ident,
       antes: antes || null, depois: depois || null
     });
   }catch(e){ /* log nunca deve travar a operação principal */ }
@@ -763,7 +777,7 @@ function abrirFormPeca(id){
       horario: horaSel ? new Date(dataSel + 'T' + horaSel).toISOString() : null,
       prioridade: $('f-prioridade').checked,
       observacao: $('f-obs').value.trim() || null,
-      atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString()
+      atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString()
     };
     if(item){
       const { error } = await supa.from('pp_itens').update(payload).eq('id', item.id);
@@ -771,7 +785,7 @@ function abrirFormPeca(id){
       await registrarLog('editar', item, item, payload);
       toast('Peça atualizada.', 'ok');
     } else {
-      payload.status = 'pendente'; payload.criado_por = usuarioAtual.email; payload.ordem_manual = itensCache.reduce((m, i) => Math.max(m, i.ordem_manual || 0), 0) + 1;
+      payload.status = 'pendente'; payload.criado_por = usuarioAtual.ident; payload.ordem_manual = itensCache.reduce((m, i) => Math.max(m, i.ordem_manual || 0), 0) + 1;
       const { data, error } = await supa.from('pp_itens').insert(payload).select().single();
       if(error){ toast('Erro ao cadastrar: ' + error.message, 'err'); return; }
       await registrarLog('cadastrar', data, null, payload);
@@ -960,7 +974,7 @@ async function executarImportacao(linhas, nomeArq){
     data_prevista: l.dataIso,
     horario: l.hora ? new Date(`${l.dataIso}T${p2(l.hora.H)}:${p2(l.hora.M)}`).toISOString() : null,
     prioridade: l.prio, observacao: l.obs, status: 'pendente', ordem_manual: base + i,
-    criado_por: usuarioAtual.email, atualizado_por: usuarioAtual.email, atualizado_em: agora
+    criado_por: usuarioAtual.ident, atualizado_por: usuarioAtual.ident, atualizado_em: agora
   }));
   for(let i = 0; i < payloads.length; i += 200){
     const lote = payloads.slice(i, i + 200);
@@ -970,7 +984,7 @@ async function executarImportacao(linhas, nomeArq){
       fecharModal(); renderPlanejamento(); return;
     }
     feitas += data.length;
-    await supa.from('pp_logs').insert(data.map(r => ({ item_id: r.id, acao: 'importar', usuario: usuarioAtual.email, antes: null, depois: { codigo9: r.codigo9, quantidade: r.quantidade, arquivo: nomeArq } })));
+    await supa.from('pp_logs').insert(data.map(r => ({ item_id: r.id, acao: 'importar', usuario: usuarioAtual.ident, antes: null, depois: { codigo9: r.codigo9, quantidade: r.quantidade, arquivo: nomeArq } })));
   }
   const dias = [...new Set(linhas.map(l => l.dataIso))];
   filtroData = dias.length === 1 ? dias[0] : '';
@@ -1101,7 +1115,7 @@ async function registrarInspecao(id, n){
   const item = itensCache.find(i => i.id === id);
   const anterior = Number(item.qtd_inspecionada || 0), novo = anterior + n;
   const completo = item.quantidade == null || novo >= Number(item.quantidade);
-  const payload = { qtd_inspecionada: novo, status: completo ? 'finalizado' : 'em_inspecao', atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  const payload = { qtd_inspecionada: novo, status: completo ? 'finalizado' : 'em_inspecao', atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() };
   const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
   await registrarLog(completo ? 'inspecao_finalizada' : 'inspecao_parcial', item, { qtd_inspecionada:anterior, status:item.status }, { qtd_inspecionada:novo, status:payload.status, inspecionado_agora:n });
@@ -1123,9 +1137,9 @@ function pedirMotivoRetrabalho(id){
 }
 async function mudarStatus(id, novoStatus, motivo){
   const item = itensCache.find(i => i.id === id);
-  const payload = { status: novoStatus, atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  const payload = { status: novoStatus, atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() };
   if(novoStatus === 'aguardando_retrabalho' && motivo){
-    const carimbo = `[Retrabalho ${fmtDT(new Date().toISOString())} · ${usuarioAtual.email}] ${motivo}`;
+    const carimbo = `[Retrabalho ${fmtDT(new Date().toISOString())} · ${usuarioAtual.ident}] ${motivo}`;
     payload.observacao = item.observacao ? item.observacao + '\n' + carimbo : carimbo;
   }
   const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
@@ -1160,7 +1174,7 @@ async function renderRetrabalho(){
 }
 async function finalizarRetrabalho(id){
   const item = itensCache.find(i => i.id === id);
-  const payload = { status:'pendente', atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  const payload = { status:'pendente', atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() };
   const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error){ toast('Erro: ' + error.message, 'err'); return; }
   await registrarLog('retrabalho_finalizado', item, { status:'aguardando_retrabalho' }, { status:'pendente' });
@@ -1237,7 +1251,7 @@ async function salvarInventario(){
   const dia = $('inv-data').value || hojeISO();
   if(!confirm(`Salvar este inventário para ${dia.split('-').reverse().join('/')}? Ele substitui o inventário desse dia (o anterior vai para o histórico).`)) return;
   const lote = (crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
-  const linhas = invRascunho.map(l => ({ lote, codigo9:l.codigo9, codigo7:codigo7(l.codigo9), quantidade:l.quantidade, data_ref:dia, ativo:false, criado_por:usuarioAtual.email }));
+  const linhas = invRascunho.map(l => ({ lote, codigo9:l.codigo9, codigo7:codigo7(l.codigo9), quantidade:l.quantidade, data_ref:dia, ativo:false, criado_por:usuarioAtual.ident }));
   // 1) grava o novo (inativo)  2) desativa o antigo  3) ativa o novo — se algo falhar no meio, nenhum dado se perde
   for(let i=0;i<linhas.length;i+=500){
     const { error } = await supa.from('pp_inventario').insert(linhas.slice(i, i+500));
