@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.10</title>
+<title>Programa de Inspeção V1.11</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -170,6 +170,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
   .pc-btns{display:flex;gap:6px}
   .pc-btns .btn{flex:1;min-height:46px;font-size:14px;padding:0 6px}
   .pc-btns .btn.fin{flex:1.6}
+  .pc-wrap{position:relative;border-radius:10px;overflow:hidden}
+  .pc-fundo{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-weight:700;font-size:15px;color:#fff;border-radius:10px;background:var(--muted)}
+  .pc-fundo.ok{background:var(--ok)}.pc-fundo.warn{background:var(--warn)}
+  .pc-fundo span{opacity:0;transition:opacity .1s}
+  .pc-wrap .pc{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;will-change:transform}
+  .pc-wrap .pc.volta{transition:transform .2s ease}
+  .pc-dica{font-size:11.5px;color:var(--muted);text-align:center;margin:-2px 0 2px}
   .pc-aguarda{font-size:12.5px;color:var(--muted);text-align:center;padding:6px 0}
 }
 </style>
@@ -184,13 +191,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.10</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.11</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.10 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.11 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -1042,6 +1049,7 @@ async function renderAcompanhamento(){
     tb.appendChild(tr);
     cards.appendChild(montarCartao(item, podeEditar));
   });
+  if(podeEditar) cards.insertAdjacentHTML('afterbegin', '<div class="pc-dica">Arraste o card: → finalizar · ← retrabalho</div>');
   if(podeEditar){
     $('page-acompanhamento').querySelectorAll('[data-ac]').forEach(b => b.addEventListener('click', () => b.dataset.ac === 'aguardando_retrabalho' ? pedirMotivoRetrabalho(b.dataset.id) : b.dataset.ac === 'finalizado' ? pedirQtdInspecionada(b.dataset.id) : mudarStatus(b.dataset.id, b.dataset.ac)));
   }
@@ -1071,7 +1079,50 @@ function montarCartao(item, podeEditar){
       <button class="btn ok2 fin" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
       <button class="btn warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
     </div>`) : ''}`;
-  return el;
+  if(!podeEditar || retr) return el;
+  return comGestoDeArrastar(el, item.id);
+}
+/* Arrastar o card: direita = Finalizar (pergunta a quantidade) · esquerda = Retrabalho (pede o motivo) */
+function comGestoDeArrastar(card, id){
+  const wrap = document.createElement('div'); wrap.className = 'pc-wrap';
+  wrap.innerHTML = '<div class="pc-fundo"><span class="g-ok">✓ Finalizar</span><span class="g-warn">Retrabalho ↺</span></div>';
+  wrap.appendChild(card);
+  const gOk = wrap.querySelector('.g-ok'), gWarn = wrap.querySelector('.g-warn'), fundo = wrap.querySelector('.pc-fundo');
+  let x0 = 0, y0 = 0, dx = 0, modo = null, ativo = false, arrastou = false;
+  const LIMITE = () => card.offsetWidth * 0.35;
+  const visual = () => {
+    card.style.transform = `translateX(${dx}px)`;
+    const forca = Math.min(Math.abs(dx) / LIMITE(), 1);
+    fundo.className = 'pc-fundo ' + (dx > 0 ? 'ok' : dx < 0 ? 'warn' : '');
+    gOk.style.opacity = dx > 0 ? forca : 0; gWarn.style.opacity = dx < 0 ? forca : 0;
+  };
+  const voltar = () => { card.classList.add('volta'); dx = 0; visual(); setTimeout(() => card.classList.remove('volta'), 220); };
+  card.addEventListener('pointerdown', e => {
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    ativo = true; modo = null; arrastou = false; x0 = e.clientX; y0 = e.clientY; dx = 0; card.classList.remove('volta');
+  });
+  card.addEventListener('pointermove', e => {
+    if(!ativo) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if(!modo){
+      if(Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      modo = Math.abs(mx) > Math.abs(my) * 1.5 ? 'h' : 'v';   // só vale se o gesto for bem mais horizontal que vertical
+      if(modo === 'h'){ try{ card.setPointerCapture(e.pointerId); }catch(_){} }
+    }
+    if(modo !== 'h') return;
+    arrastou = true; dx = mx; visual();
+  });
+  const soltar = e => {
+    if(!ativo) return; ativo = false;
+    if(modo !== 'h'){ return; }
+    const passou = Math.abs(dx) >= LIMITE(), dir = dx;
+    voltar();
+    if(e.type === 'pointerup' && passou) setTimeout(() => dir > 0 ? pedirQtdInspecionada(id) : pedirMotivoRetrabalho(id), 120);
+  };
+  card.addEventListener('pointerup', soltar);
+  card.addEventListener('pointercancel', soltar);
+  card.addEventListener('click', e => { if(arrastou){ e.stopPropagation(); e.preventDefault(); arrastou = false; } }, true);
+  return wrap;
 }
 function renderFinalizados(){
   const tb = $('ac-fin-tbody'); tb.innerHTML = '';
