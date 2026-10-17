@@ -507,9 +507,9 @@ async function authEntrar(){
   const { data, error } = await supa.auth.signInWithPassword({ email, password: senha });
   if(error){ $('auth-status').innerHTML = `<span style="color:var(--danger)">${error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : error.message}</span>`; return; }
   $('auth-senha').value = '';
-  await authAposLogin(data.user);
+  await authAposLogin(data.user, true);
 }
-async function authAposLogin(user){
+async function authAposLogin(user, registrar){
   $('auth-status').textContent = 'Carregando perfil…';
   const { data: perfil, error } = await supa.from('perfis').select('nivel').eq('id', user.id).single();
   if(error || !perfil || !PAPEIS[Number(perfil.nivel)]){
@@ -524,9 +524,11 @@ async function authAposLogin(user){
   $('auth-quem').title = user.email;
   $('auth-gate').classList.add('hidden');
   $('db-status').textContent = 'Supabase: conectado';
+  if(registrar) await registrarLog('login', null, null, { perfil: PAPEIS[nivelUsuario].nome });   // só login digitado, não a sessão restaurada
   await iniciarAppPosLogin();
 }
 async function authSair(){
+  try{ if(usuarioAtual) await registrarLog('logout', null, null, null); }catch(e){}
   try{ await supa.auth.signOut(); }catch(e){}
   usuarioAtual = null; nivelUsuario = null;
   $('auth-email').value=''; $('auth-senha').value=''; $('auth-status').textContent='';
@@ -806,7 +808,7 @@ async function excluirPeca(id){
   if(!confirm(`Excluir a peça ${item?.codigo9}?`)) return;
   const { error } = await supa.from('pp_itens').delete().eq('id', id);
   if(error){ toast('Erro ao excluir: ' + error.message, 'err'); return; }
-  await registrarLog('excluir', item, item, null);
+  await registrarLog('excluir', null, item, null);   // item_id nulo: a peça já foi apagada (senão a chave estrangeira recusa o log)
   toast('Peça excluída.', 'ok');
   renderPlanejamento();
 }
@@ -1270,8 +1272,8 @@ async function renderAuditoria(){
       <td>${fmtDT(l.criado_em)}</td>
       <td>${l.usuario}</td>
       <td>${l.acao}</td>
-      <td class="mono">${l.pp_itens?.codigo9 || '—'}</td>
-      <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(JSON.stringify(l.antes||{})+' → '+JSON.stringify(l.depois||{})).replace(/"/g,'&quot;')}">${l.depois ? JSON.stringify(l.depois) : '—'}</td>`;
+      <td class="mono">${l.pp_itens?.codigo9 || l.antes?.codigo9 || l.depois?.codigo9 || '—'}</td>
+      <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(JSON.stringify(l.antes||{})+' → '+JSON.stringify(l.depois||{})).replace(/"/g,'&quot;')}">${l.depois ? JSON.stringify(l.depois) : (l.antes ? 'removido: ' + (l.antes.descricao || '') + ' · qtd ' + (l.antes.quantidade ?? '—') : '—')}</td>`;
     tb.appendChild(tr);
   });
 }
