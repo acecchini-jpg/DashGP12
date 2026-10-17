@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Programa de Inspeção V1.9</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F0F2F7; --surface:#FFFFFF; --ink:#1A1F2E; --muted:#7B849A;
+  --accent:#3A6EF0; --accent-2:#2A56D0; --line:#DDE1EB;
+  --ok:#18A87D; --warn:#D4A017; --danger:#E04040;
+  --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+  --radius:8px; --shadow:0 1px 3px rgba(23,33,43,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px}
+#app{display:flex;min-height:100vh}
+#auth-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200}
+#auth-gate.hidden{display:none}
+#auth-box{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 40px rgba(23,33,43,.12);padding:32px 30px;width:min(360px,90vw)}
+#auth-box h1{font-size:17px;font-weight:700;letter-spacing:.05em;color:var(--accent);margin-bottom:2px}
+#auth-box h1 span{display:block;font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--muted);margin-top:2px}
+#auth-box .field{margin-bottom:14px}
+.userbar{padding:10px 14px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.userbar .quem{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.userbar button{font-size:11.5px;padding:4px 9px;flex-shrink:0}
+aside{width:224px;background:var(--surface);border-right:1px solid var(--line);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}
+.brand{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
+.brand h1{font-size:15px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
+.brand small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.12em;margin-top:2px}
+.hazard{height:4px;background:repeating-linear-gradient(135deg,var(--accent) 0 10px,#F0B429 10px 20px);opacity:.85}
+nav{padding:10px 8px;flex:1;overflow:auto}
+.nav-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;cursor:pointer;padding:8px 10px;border-radius:6px;font-size:13.5px;color:var(--ink);font-family:var(--sans)}
+.nav-item:hover{background:#EEF2F5}
+.nav-item.active{background:#E4EDF4;color:var(--accent);font-weight:600}
+.nav-item .ico{width:18px;text-align:center;font-size:14px}
+.db-status{padding:10px 14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--muted)}
+main{margin-left:224px;flex:1;padding:22px 26px 60px;min-width:0}
+.page{display:none}
+.page.active{display:block}
+.page-head{margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.page-head h2{font-size:19px;font-weight:700}
+.page-head p{color:var(--muted);margin-top:3px;font-size:13px;max-width:640px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>.field{flex:1;min-width:140px;margin-bottom:0}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-family:var(--sans);font-size:13.5px;background:#FCFDFE;color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--accent-2);outline-offset:-1px}
+input[type=checkbox]{width:auto}
+.field{margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+.btn:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.btn.sec{background:var(--surface);color:var(--accent);border-color:var(--line)}
+.btn.sec:hover{background:#EEF2F5}
+.btn.danger{background:var(--danger);border-color:var(--danger)}
+.btn.ok2{background:var(--ok);border-color:var(--ok)}
+.btn.warn{background:var(--warn);border-color:var(--warn)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--line);padding:7px 8px;background:#FAFBFC;position:sticky;top:0}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+tr:hover td{background:#F7FAFC}
+tr.linha-atrasado td{background:#FDEDED}
+tr.linha-atrasado td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
+tr.linha-alerta td{background:#FFF6E8}
+tr.linha-alerta td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+tr.linha-prioridade td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.tbl-wrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.chip{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600;color:#fff}
+.chip.c-pendente{background:var(--muted)}
+.chip.c-em_inspecao{background:var(--accent)}
+.chip.c-finalizado{background:var(--ok)}
+.chip.c-aguardando_retrabalho{background:var(--warn)}
+.chip.prio{background:var(--danger)}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono)}
+.empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
+#toast{position:fixed;bottom:22px;right:22px;z-index:100;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--ink);color:#fff;padding:11px 16px;border-radius:6px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:380px;animation:tin .2s ease}
+.toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#modal-back{position:fixed;inset:0;background:rgba(23,33,43,.45);display:none;align-items:center;justify-content:center;z-index:90}
+#modal-back.open{display:flex}
+#modal{background:var(--surface);border-radius:10px;width:min(480px,92vw);max-height:86vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+#modal .m-head{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px}
+#modal .m-body{padding:16px 18px}
+#modal .m-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+.drag-handle{cursor:grab;color:var(--muted);padding:0 4px}
+tr.dragging{opacity:.4}
+.legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:10px}
+.legenda span{display:inline-flex;align-items:center;gap:5px}
+.legenda i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+
+/* ---------- V1.4: menu em abas no topo + largura total ---------- */
+#app{display:block}
+aside{position:sticky;top:0;bottom:auto;left:0;right:0;width:100%;flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line)}
+.hazard{display:none}
+.brand{padding:8px 14px;border-bottom:0;display:flex;flex-direction:column;justify-content:center;flex-shrink:0}
+nav{display:flex;flex:1;min-width:0;padding:0 6px;overflow-x:auto;align-items:stretch;gap:2px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+.nav-item{width:auto;white-space:nowrap;border-radius:0;border-bottom:3px solid transparent;padding:0 14px;flex-shrink:0;min-height:44px}
+.nav-item:hover{background:#F4F6FA}
+.nav-item.active{background:none;border-bottom-color:var(--accent)}
+.db-status{border-top:0;display:flex;align-items:center;padding:0 10px;white-space:nowrap}
+.userbar{border-top:0;flex-shrink:0}
+main{margin-left:0;padding:14px 16px 60px;max-width:none;width:100%}
+.tbl-wrap{max-height:none;overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media(max-width:900px){
+  .brand small,.db-status{display:none}
+  .brand{padding:6px 10px}.brand h1{font-size:12.5px;letter-spacing:.03em}
+  .nav-item{padding:0 10px;font-size:13px}
+  .userbar{padding:0 8px}
+  main{padding:10px 6px 50px}
+  .card{padding:10px 8px;margin-bottom:12px}
+  table{font-size:12px}th,td{padding:5px 5px}
+  .page-head{margin-bottom:10px}.page-head h2{font-size:17px}.page-head p{font-size:12px}
+  .btn.sm{padding:5px 8px}
+}
+@media(max-width:900px){.userbar .quem{display:none}}
+.chip{white-space:nowrap}
+.flag{display:inline-block;width:11px;height:11px;border-radius:50%;margin-left:6px;vertical-align:middle;cursor:help}
+.flag.ok{background:var(--ok)}.flag.bad{background:var(--danger)}
+.insp{font-family:var(--mono);white-space:nowrap}
+.inv-linha input{padding:5px 7px}
+.dropzone{border:2px dashed var(--line);border-radius:var(--radius);padding:14px;text-align:center;color:var(--muted);cursor:pointer;margin-bottom:12px;background:#FAFBFC;font-size:13px}
+.dropzone b{color:var(--ink)}.dropzone small{display:block;margin-top:3px;font-size:11.5px}
+.dropzone:hover,.dropzone.over{border-color:var(--accent);background:#EEF3FF;color:var(--accent)}
+tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F5F6F8}
+.busca-wrap{position:relative}
+.busca-res{position:absolute;z-index:80;left:0;top:100%;min-width:300px;max-width:min(520px,90vw);background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(23,33,43,.18);max-height:220px;overflow:auto;margin-top:2px}
+.busca-res div{padding:7px 10px;cursor:pointer;display:flex;gap:10px;font-size:13px;border-bottom:1px solid var(--line)}
+.busca-res div:last-child{border-bottom:0}
+.busca-res div:hover{background:#EEF2F8}
+.busca-res .cod{font-family:var(--mono);color:var(--accent);flex-shrink:0}
+@media(max-width:600px){.brand{display:none}.nav-item{padding:0 9px;font-size:12.5px}.nav-item .ico{display:none}}
+
+/* ---------- V1.9: Plano de Inspeção em cartões (celular em pé) ---------- */
+.cards{display:none}
+@media(max-width:700px){
+  #page-acompanhamento .tbl-wrap{display:none}
+  #page-acompanhamento .cards{display:flex;flex-direction:column;gap:10px}
+  #page-acompanhamento .page-head p,#page-acompanhamento .legenda{display:none}
+  #page-acompanhamento .page-head{margin-bottom:6px}
+  #page-acompanhamento .card{padding:8px 0;background:none;border:0;box-shadow:none}
+  #page-acompanhamento .filters{gap:6px;margin-bottom:8px}
+  #page-acompanhamento .filters label{display:none}
+  .pc{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:10px;padding:10px 12px}
+  .pc.linha-atrasado{border-left-color:var(--danger);background:#FDEDED}
+  .pc.linha-alerta{border-left-color:var(--warn);background:#FFF6E8}
+  .pc.linha-prioridade{border-left-color:var(--accent)}
+  .pc-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .pc-cod{font-family:var(--mono);font-weight:700;font-size:17px}
+  .pc-hora{font-family:var(--mono);font-size:13px;font-weight:600;white-space:nowrap}
+  .pc-desc{font-size:13.5px;margin:2px 0 6px;line-height:1.3}
+  .pc-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+  .pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+  .pc-nums div{background:rgba(0,0,0,.04);border-radius:8px;padding:5px 6px;text-align:center}
+  .pc-nums small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .pc-nums b{font-family:var(--mono);font-size:17px}
+  .pc-obs{font-size:12px;color:var(--muted);white-space:pre-line;margin-bottom:8px;max-height:3.6em;overflow:hidden}
+  .pc-btns{display:flex;gap:6px}
+  .pc-btns .btn{flex:1;min-height:46px;font-size:14px;padding:0 6px}
+  .pc-btns .btn.fin{flex:1.6}
+  .pc-aguarda{font-size:12.5px;color:var(--muted);text-align:center;padding:6px 0}
+}
+</style>
+</head>
+<body>
+
+<div id="auth-gate">
+  <div id="auth-box">
+    <h1>PROGRAMA DE INSPEÇÃO<span>GP12 · LOGÍSTICA · PRODUÇÃO</span></h1>
+    <div class="field" style="margin-top:18px"><label>E-mail</label><input type="text" id="auth-email" autocomplete="username" placeholder="nome_logistica  ou  e-mail completo"></div>
+    <div class="field"><label>Senha</label><input type="password" id="auth-senha" autocomplete="current-password"></div>
+    <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
+    <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
+    <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
+  </div>
+</div>
+
+<div id="app">
+  <aside>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>FIREWALL · GP12</small></div>
+    <div class="hazard"></div>
+    <nav id="nav-list"></nav>
+    <div class="db-status" id="db-status">Supabase: —</div>
+    <div class="userbar">
+      <span class="quem" id="auth-quem"></span>
+      <button class="btn sm sec" id="auth-sair">Sair</button>
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- ===== PLANEJAMENTO ===== -->
+    <section class="page" id="page-planejamento">
+      <div class="page-head">
+        <div>
+          <h2>Planejamento</h2>
+          <p>Fila de peças a inspecionar, na ordem de entrega. Marque "Prioritário" para passar na frente; sem prioridade, a ordem é pelo horário informado (ou, se não houver, pela ordem de cadastro — arraste para reordenar).</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn sec" id="pl-importar">⇪ Importar planilha</button>
+          <input type="file" id="pl-arquivo" accept=".xlsx,.xlsm,.xls" hidden>
+          <button class="btn" id="pl-novo">+ Nova peça</button>
+        </div>
+      </div>
+      <div class="dropzone" id="pl-drop"><b>⇪ Arraste a planilha do Programa (.xlsx) para cá</b> ou clique para escolher<small>Lê a aba "Programa" do modelo. Mostra uma prévia com os erros antes de gravar; linhas já cadastradas são ignoradas.</small></div>
+      <div class="card">
+        <div class="filters"><label style="margin:0">Dia</label><input type="date" class="flt-data" style="width:auto"><button class="btn sm sec flt-hoje">Hoje</button><button class="btn sm sec flt-todos">Todos os dias</button></div>
+        <div class="legenda">
+          <span><i style="background:var(--danger)"></i>Atrasado (passou do horário)</span>
+          <span><i style="background:var(--warn)"></i>Faltam 3h ou menos</span>
+          <span><i style="background:var(--accent)"></i>Prioritário</span>
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th style="width:28px"></th><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Inspec.</th><th>Horário</th><th>Prioridade</th><th>Status</th><th>Obs.</th><th></th></tr></thead>
+          <tbody id="pl-tbody"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h3>Finalizados <span class="muted" id="ac-fin-count" style="font-weight:400"></span></h3>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Inspec.</th><th>Horário previsto</th><th>Finalizado em</th><th>Finalizado por</th></tr></thead>
+          <tbody id="ac-fin-tbody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== ACOMPANHAMENTO (GP12) ===== -->
+    <section class="page" id="page-acompanhamento">
+      <div class="page-head">
+        <div>
+          <h2>Plano de Inspeção</h2>
+          <p>Fila organizada por prioridade e horário. Marque o andamento conforme a peça é inspecionada.</p>
+        </div>
+        <button class="btn sec" id="ac-atualizar">↻ Atualizar</button>
+      </div>
+      <div class="card">
+        <div class="filters"><label style="margin:0">Dia</label><input type="date" class="flt-data" style="width:auto"><button class="btn sm sec flt-hoje">Hoje</button><button class="btn sm sec flt-todos">Todos os dias</button></div>
+        <div class="legenda">
+          <span><i style="background:var(--danger)"></i>Atrasado</span>
+          <span><i style="background:var(--warn)"></i>Faltam 3h ou menos</span>
+          <span><i style="background:var(--accent)"></i>Prioritário</span>
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Inspec.</th><th>Horário</th><th>Prioridade</th><th>Status</th><th>Obs.</th><th></th></tr></thead>
+          <tbody id="ac-tbody"></tbody>
+        </table></div>
+        <div id="ac-cards" class="cards"></div>
+      </div>
+    </section>
+
+    <!-- ===== RETRABALHO ===== -->
+    <section class="page" id="page-retrabalho">
+      <div class="page-head">
+        <div>
+          <h2>Aguardando Retrabalho</h2>
+          <p>Peças que o GP12 apontou como pendentes de retrabalho. Ao concluir, a peça volta para a fila de inspeção.</p>
+        </div>
+        <button class="btn sec" id="rt-atualizar">↻ Atualizar</button>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th>Horário original</th><th>Obs.</th><th></th></tr></thead>
+          <tbody id="rt-tbody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== INVENTÁRIO ===== -->
+    <section class="page" id="page-inventario">
+      <div class="page-head">
+        <div>
+          <h2>Inventário</h2>
+          <p>Peças disponíveis para inspeção. Cada peça a inspecionar mostra uma bolinha ao lado da quantidade: <b style="color:var(--ok)">verde</b> se o inventário cobre o que falta inspecionar, <b style="color:var(--danger)">vermelha</b> se não há inventário ou ele é menor. O inventário vale só para o <b>dia selecionado</b>: um novo dia pede um novo inventário (sem ele, as peças daquele dia ficam com bolinha vermelha). Ao salvar, ele substitui o do mesmo dia e o anterior vai para o histórico.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="filters"><label style="margin:0">Dia do inventário</label><input type="date" id="inv-data" style="width:auto"><button class="btn sm sec" id="inv-hoje">Hoje</button></div>
+        <h3>Inventário do dia <span class="muted" id="inv-meta" style="font-weight:400"></span></h3>
+        <div class="filters">
+          <div style="position:relative"><input id="inv-busca" placeholder="Buscar por descrição…" autocomplete="off" style="width:200px"></div>
+          <input id="inv-cod" placeholder="Código" maxlength="9" style="width:140px">
+          <input id="inv-qtd" type="number" min="0" placeholder="Quantidade" style="width:130px">
+          <button class="btn sm" id="inv-add">+ Adicionar</button>
+          <span style="flex:1"></span>
+          <button class="btn sm sec" id="inv-descartar">Descartar alterações</button>
+          <button class="btn ok2" id="inv-salvar">Salvar inventário</button>
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Quantidade</th><th></th></tr></thead>
+          <tbody id="inv-tbody"></tbody>
+        </table></div>
+        <p class="muted" id="inv-aviso" style="font-size:12px;margin-top:8px"></p>
+      </div>
+      <div class="card">
+        <h3>Histórico</h3>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Dia</th><th>Lançado em</th><th>Por</th><th class="num">Códigos</th><th class="num">Total</th><th></th></tr></thead>
+          <tbody id="inv-hist"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== AUDITORIA ===== -->
+    <section class="page" id="page-auditoria">
+      <div class="page-head">
+        <div><h2>Auditoria</h2><p>Log de tudo o que foi cadastrado e alterado, com usuário e horário.</p></div>
+        <button class="btn sec" id="au-atualizar">↻ Atualizar</button>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Quando</th><th>Usuário</th><th>Ação</th><th>Código</th><th>Detalhe</th></tr></thead>
+          <tbody id="au-tbody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modal-back"><div id="modal">
+  <div class="m-head" id="m-head">Título</div>
+  <div class="m-body" id="m-body"></div>
+  <div class="m-foot" id="m-foot"></div>
+</div></div>
+
+<script>
+/* =====================================================================
+   HELPERS
+===================================================================== */
+function $(id){ return document.getElementById(id); }
+function toast(msg, tipo){
+  const el = document.createElement('div');
+  el.className = 'toast' + (tipo ? ' ' + tipo : '');
+  el.textContent = msg;
+  $('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+function fmtDT(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+function normalizar(t){ return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function buscarProdutos(termo, max){
+  const palavras = normalizar(termo).split(/\s+/).filter(Boolean), out = [];
+  if(!palavras.length) return out;
+  for(const [cod, desc] of produtosMap){
+    const alvo = normalizar(cod + ' ' + desc);
+    if(palavras.every(w => alvo.includes(w))){ out.push({ cod, desc }); if(out.length >= (max || 30)) break; }
+  }
+  return out;
+}
+function ligarBuscaPorDescricao(input, aoEscolher){
+  const wrap = input.parentNode; wrap.classList.add('busca-wrap');
+  const box = document.createElement('div'); box.className = 'busca-res'; box.style.display = 'none'; wrap.appendChild(box);
+  const fechar = () => { box.style.display = 'none'; };
+  const atualizar = () => {
+    if(input.value.trim().length < 2){ fechar(); return; }
+    box.innerHTML = '';
+    const r = buscarProdutos(input.value);
+    if(!r.length){
+      const v = document.createElement('div'); v.className = 'muted';
+      v.textContent = produtosMap.size ? 'Nada encontrado no cadastro do Firewall.' : 'Cadastro do Firewall indisponível.';
+      box.appendChild(v);
+    }
+    r.forEach(pr => {
+      const d = document.createElement('div');
+      const c = document.createElement('span'); c.className = 'cod'; c.textContent = pr.cod;
+      const t = document.createElement('span'); t.textContent = pr.desc || '';
+      d.append(c, t);
+      d.addEventListener('mousedown', e => { e.preventDefault(); aoEscolher(pr); input.value = ''; fechar(); });
+      box.appendChild(d);
+    });
+    box.style.display = 'block';
+  };
+  input.addEventListener('input', atualizar);
+  input.addEventListener('focus', atualizar);
+  input.addEventListener('blur', () => setTimeout(fechar, 150));
+}
+function dataLocalISO(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function hojeISO(){ return dataLocalISO(new Date()); }
+function horaLocal(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+// Dia de referência do item: data_prevista; se não houver, dia do horário; senão dia do cadastro
+function dataDoItem(i){
+  if(i.data_prevista) return i.data_prevista;
+  if(i.horario) return dataLocalISO(new Date(i.horario));
+  return dataLocalISO(new Date(i.criado_em));
+}
+let filtroData = hojeISO();   // '' = todos os dias
+function filtrarDia(itens){ return filtroData ? itens.filter(i => dataDoItem(i) === filtroData) : itens; }
+function initFiltrosDia(){
+  const sync = () => document.querySelectorAll('.flt-data').forEach(e => e.value = filtroData);
+  const refresh = () => { sync(); const a = document.querySelector('.nav-item.active')?.dataset.page; if(a) showPage(a); };
+  document.querySelectorAll('.flt-data').forEach(e => e.addEventListener('change', () => { filtroData = e.value; refresh(); }));
+  document.querySelectorAll('.flt-hoje').forEach(b => b.addEventListener('click', () => { filtroData = hojeISO(); refresh(); }));
+  document.querySelectorAll('.flt-todos').forEach(b => b.addEventListener('click', () => { filtroData = ''; refresh(); }));
+  sync();
+}
+/* Cadastro de produtos do Firewall (tabela "produtos": codigo = 7 dígitos, descricao) */
+let produtosMap = new Map();
+async function carregarProdutos(){
+  try{
+    const mapa = new Map(); const TAM = 1000;
+    for(let de=0;;de+=TAM){
+      const { data, error } = await supa.from('produtos').select('codigo,descricao').order('codigo').range(de, de+TAM-1);
+      if(error) throw error;
+      (data||[]).forEach(p => mapa.set(String(p.codigo).trim(), p.descricao));
+      if(!data || data.length < TAM) break;
+    }
+    produtosMap = mapa;
+    $('db-status').textContent = `Supabase: conectado · ${produtosMap.size} produtos`;
+  }catch(e){
+    $('db-status').textContent = 'Supabase: conectado · sem acesso ao cadastro de produtos';
+    console.warn('Cadastro de produtos indisponível:', e);
+  }
+}
+function descItem(item){
+  const d = item.descricao || produtosMap.get(codigo7(item.codigo9));
+  return d ? d : '<span class="muted">—</span>';
+}
+function codigo7(cod9){
+  const c = String(cod9 || '').trim();
+  return c.length > 7 ? c.slice(0,7) : c;
+}
+function fecharModal(){ $('modal-back').classList.remove('open'); $('m-body').innerHTML=''; $('m-foot').innerHTML=''; $('modal').style.width=''; }
+function abrirModal(titulo, bodyHTML, footBtns){
+  $('m-head').textContent = titulo;
+  $('m-body').innerHTML = bodyHTML;
+  $('m-foot').innerHTML = '';
+  footBtns.forEach(b => $('m-foot').appendChild(b));
+  $('modal-back').classList.add('open');
+}
+
+/* =====================================================================
+   AUTENTICAÇÃO (mesmo projeto Supabase do Firewall — só login/nível)
+   Níveis: 1 Administrador (tudo) · 2 GP12 · 3 Logística · 4 Produção
+   Estes dois últimos (3 e 4) são NOVOS — se o usuário ainda não existir
+   com esse nível na tabela "perfis", cadastre antes de usar.
+===================================================================== */
+const SUPABASE_URL = 'https://bydvhklgwxgjhuvpbbwi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5ZHZoa2xnd3hnamh1dnBiYndpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDk3NzAsImV4cCI6MjEwMjM4NTc3MH0.nNf8omMddp40TSe5kJA33WUrJ1RRbqgtU45gewb9FDg';
+const DOMINIO_PADRAO = 'roechling.com';
+let supa = null;
+let usuarioAtual = null;
+let nivelUsuario = null;
+
+const PAPEIS = {
+  1: { nome:'Administrador', paginas:['planejamento','acompanhamento','retrabalho','inventario','auditoria'], editar:{planejamento:true, acompanhamento:true, retrabalho:true, inventario:true} },
+  2: { nome:'GP12',          paginas:['acompanhamento'],                                          editar:{acompanhamento:true} },
+  3: { nome:'Logística',     paginas:['planejamento','acompanhamento','retrabalho','inventario'],  editar:{planejamento:true, inventario:true} },
+  4: { nome:'Produção',      paginas:['retrabalho'],                                                editar:{retrabalho:true} }
+};
+const NAV_ITEMS = [
+  { id:'planejamento',   ico:'▤', label:'Planejamento' },
+  { id:'acompanhamento', ico:'◉', label:'Plano de Inspeção' },
+  { id:'retrabalho',     ico:'↺', label:'Retrabalho' },
+  { id:'inventario',     ico:'▥', label:'Inventário' },
+  { id:'auditoria',      ico:'▦', label:'Auditoria' }
+];
+
+function authConfigurado(){
+  return SUPABASE_URL.startsWith('http') && !SUPABASE_ANON_KEY.startsWith('COLE_AQUI');
+}
+async function authInit(){
+  if(!authConfigurado()){
+    $('auth-status').innerHTML = '<span style="color:var(--danger)">Supabase não configurado neste arquivo.</span>';
+    $('auth-entrar').disabled = true;
+    return;
+  }
+  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  $('auth-entrar').addEventListener('click', authEntrar);
+  $('auth-senha').addEventListener('keydown', e => { if(e.key === 'Enter') authEntrar(); });
+  $('auth-sair').addEventListener('click', authSair);
+  const { data: { session } } = await supa.auth.getSession();
+  if(session?.user) await authAposLogin(session.user);
+}
+// Só para exibição: "marcos_logistica@roechling.com" -> "Marcos". A permissão vem SEMPRE da tabela perfis, nunca do texto do e-mail.
+function nomeDoUsuario(email){
+  const partes = String(email || '').split('@')[0].split('_');
+  if(partes.length < 2) return '';
+  return partes.slice(0, -1).join(' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+async function authEntrar(){
+  let email = $('auth-email').value.trim(); const senha = $('auth-senha').value;
+  if(email && !email.includes('@')) email += '@' + DOMINIO_PADRAO;   // "marcos_logistica" -> marcos_logistica@roechling.com
+  if(!email || !senha){ $('auth-status').textContent = 'Preencha e-mail e senha.'; return; }
+  $('auth-status').textContent = 'Entrando…';
+  const { data, error } = await supa.auth.signInWithPassword({ email, password: senha });
+  if(error){ $('auth-status').innerHTML = `<span style="color:var(--danger)">${error.message === 'Invalid login credentials' ? 'E-mail ou senha inválidos.' : error.message}</span>`; return; }
+  $('auth-senha').value = '';
+  await authAposLogin(data.user);
+}
+async function authAposLogin(user){
+  $('auth-status').textContent = 'Carregando perfil…';
+  const { data: perfil, error } = await supa.from('perfis').select('nivel').eq('id', user.id).single();
+  if(error || !perfil || !PAPEIS[Number(perfil.nivel)]){
+    $('auth-status').innerHTML = '<span style="color:var(--danger)">Login ok, mas este usuário não tem um nível válido (1 a 4) cadastrado para o Programa de Inspeção. Peça para um administrador cadastrar/ajustar na tabela "perfis".</span>';
+    await supa.auth.signOut();
+    return;
+  }
+  usuarioAtual = { id:user.id, email:user.email };
+  nivelUsuario = Number(perfil.nivel);
+  montarNav();
+  $('auth-quem').textContent = `${nomeDoUsuario(user.email) || user.email} · ${PAPEIS[nivelUsuario].nome}`;
+  $('auth-quem').title = user.email;
+  $('auth-gate').classList.add('hidden');
+  $('db-status').textContent = 'Supabase: conectado';
+  await iniciarAppPosLogin();
+}
+async function authSair(){
+  try{ await supa.auth.signOut(); }catch(e){}
+  usuarioAtual = null; nivelUsuario = null;
+  $('auth-email').value=''; $('auth-senha').value=''; $('auth-status').textContent='';
+  $('auth-gate').classList.remove('hidden');
+}
+
+/* =====================================================================
+   NAVEGAÇÃO
+===================================================================== */
+function montarNav(){
+  const permitidas = PAPEIS[nivelUsuario].paginas;
+  $('nav-list').innerHTML = '';
+  NAV_ITEMS.filter(it => permitidas.includes(it.id)).forEach(it => {
+    const b = document.createElement('button');
+    b.className = 'nav-item';
+    b.dataset.page = it.id;
+    b.innerHTML = `<span class="ico">${it.ico}</span>${it.label}`;
+    b.addEventListener('click', () => showPage(it.id));
+    $('nav-list').appendChild(b);
+  });
+  showPage(permitidas[0]);
+}
+function showPage(id){
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === id));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
+  if(id === 'planejamento')   renderPlanejamento();
+  if(id === 'acompanhamento') renderAcompanhamento();
+  if(id === 'retrabalho')     renderRetrabalho();
+  if(id === 'inventario')     renderInventario();
+  if(id === 'auditoria')      renderAuditoria();
+}
+
+/* =====================================================================
+   DADOS — tabela pp_itens no Supabase (dado compartilhado entre todos)
+===================================================================== */
+let itensCache = [];
+
+async function buscarTudo(montar){   // lê todas as linhas, 1000 por vez (limite padrão do Supabase)
+  const TAM = 1000, todos = [];
+  for(let de=0;;de+=TAM){
+    const { data, error } = await montar().range(de, de+TAM-1);
+    if(error) return { error };
+    todos.push(...(data||[]));
+    if(!data || data.length < TAM) break;
+  }
+  return { data: todos };
+}
+let invMap = new Map();   // codigo7 -> quantidade total no inventário ativo
+async function carregarItens(){
+  const r = await buscarTudo(() => supa.from('pp_itens').select('*').order('criado_em', { ascending:true }));
+  if(r.error){ toast('Erro ao carregar itens: ' + r.error.message, 'err'); return; }
+  itensCache = r.data;
+  const inv = await buscarTudo(() => supa.from('pp_inventario').select('codigo7,quantidade,data_ref,criado_em').eq('ativo', true).order('id'));
+  if(!inv.error){
+    invMap = new Map();   // chave "AAAA-MM-DD|codigo7"
+    inv.data.forEach(l => {
+      const k = (l.data_ref || dataLocalISO(new Date(l.criado_em))) + '|' + l.codigo7;
+      invMap.set(k, (invMap.get(k) || 0) + Number(l.quantidade));
+    });
+  }
+}
+function faltaInspecionar(item){
+  return item.quantidade != null ? Math.max(Number(item.quantidade) - Number(item.qtd_inspecionada || 0), 0) : null;
+}
+function flagInventario(item){
+  if(item.status === 'finalizado') return '';
+  const dia = dataDoItem(item);
+  const saldo = invMap.get(dia + '|' + (item.codigo7 || codigo7(item.codigo9))) || 0;
+  const falta = faltaInspecionar(item);
+  const ok = saldo > 0 && (falta === null || saldo >= falta);
+  const dica = `Inventário de ${dia.split('-').reverse().join('/')}: ${saldo} · falta inspecionar: ${falta === null ? '—' : falta}`;
+  return `<span class="flag ${ok ? 'ok' : 'bad'}" title="${dica}"></span>`;
+}
+function celulasQtd(item){
+  return `<td class="num">${item.quantidade ?? '—'}${flagInventario(item)}</td>
+      <td class="num insp">${Number(item.qtd_inspecionada || 0)}${item.quantidade != null ? ' / ' + item.quantidade : ''}</td>`;
+}
+
+function ordenarFila(itens){
+  const agora = Date.now();
+  return [...itens].sort((a,b) => {
+    if(!!a.prioridade !== !!b.prioridade) return a.prioridade ? -1 : 1;
+    const ha = a.horario ? new Date(a.horario).getTime() : null;
+    const hb = b.horario ? new Date(b.horario).getTime() : null;
+    if(ha && hb) return ha - hb;
+    if(ha && !hb) return -1;
+    if(!ha && hb) return 1;
+    return (a.ordem_manual||0) - (b.ordem_manual||0) || new Date(a.criado_em) - new Date(b.criado_em);
+  });
+}
+function classeLinha(item){
+  if(item.status === 'finalizado') return '';
+  if(item.horario){
+    const diff = new Date(item.horario).getTime() - Date.now();
+    if(diff <= 0) return 'linha-atrasado';
+    if(diff <= 3*60*60*1000) return 'linha-alerta';
+  }
+  if(item.prioridade) return 'linha-prioridade';
+  return '';
+}
+function chipStatus(status){
+  const labels = { pendente:'Pendente', em_inspecao:'Em inspeção', finalizado:'Finalizado', aguardando_retrabalho:'Em retrabalho' };
+  return `<span class="chip c-${status}">${labels[status]||status}</span>`;
+}
+
+async function registrarLog(acao, item, antes, depois){
+  try{
+    await supa.from('pp_logs').insert({
+      item_id: item?.id || null,
+      acao, usuario: usuarioAtual.email,
+      antes: antes || null, depois: depois || null
+    });
+  }catch(e){ /* log nunca deve travar a operação principal */ }
+}
+
+/* ---------- PLANEJAMENTO ---------- */
+async function renderPlanejamento(){
+  await carregarItens();
+  const podeEditar = PAPEIS[nivelUsuario].editar.planejamento;
+  $('pl-drop').style.display = podeEditar ? '' : 'none';
+  $('pl-importar').style.display = podeEditar ? '' : 'none';
+  $('pl-novo').style.display = podeEditar ? '' : 'none';
+  const tb = $('pl-tbody'); tb.innerHTML = '';
+  renderFinalizados();
+  const fila = ordenarFila(filtrarDia(itensCache.filter(i => i.status !== 'finalizado')));
+  if(fila.length === 0){ tb.innerHTML = '<tr><td colspan="10" class="empty">Nenhuma peça para este dia.</td></tr>'; return; }
+  fila.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.className = classeLinha(item);
+    tr.draggable = podeEditar && !item.horario;
+    tr.dataset.id = item.id;
+    tr.innerHTML = `
+      <td class="drag-handle">${tr.draggable ? '⠿' : ''}</td>
+      <td class="mono">${item.codigo9}</td>
+      <td>${descItem(item)}</td>
+      ${celulasQtd(item)}
+      <td>${item.horario ? fmtDT(item.horario) : '<span class="muted">sem horário</span>'}</td>
+      <td>${item.prioridade ? '<span class="chip prio">Prioritário</span>' : '—'}</td>
+      <td>${chipStatus(item.status)}</td>
+      <td style="white-space:pre-line">${item.observacao || ''}</td>
+      <td style="white-space:nowrap">
+        ${podeEditar ? `<button class="btn sm sec" data-edit="${item.id}">Editar</button> <button class="btn sm danger" data-del="${item.id}">Excluir</button>` : ''}
+      </td>`;
+    tb.appendChild(tr);
+  });
+  if(podeEditar){
+    tb.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => abrirFormPeca(b.dataset.edit)));
+    tb.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => excluirPeca(b.dataset.del)));
+    ativarDragDrop(tb);
+  }
+}
+function ativarDragDrop(tb){
+  let arrastando = null;
+  tb.querySelectorAll('tr[draggable=true]').forEach(tr => {
+    tr.addEventListener('dragstart', () => { arrastando = tr; tr.classList.add('dragging'); });
+    tr.addEventListener('dragend', () => { tr.classList.remove('dragging'); arrastando = null; });
+    tr.addEventListener('dragover', e => e.preventDefault());
+    tr.addEventListener('drop', async () => {
+      if(!arrastando || arrastando === tr) return;
+      const ids = [...tb.querySelectorAll('tr')].map(r => r.dataset.id);
+      const iFrom = ids.indexOf(arrastando.dataset.id), iTo = ids.indexOf(tr.dataset.id);
+      ids.splice(iTo, 0, ids.splice(iFrom, 1)[0]);
+      for(let k=0;k<ids.length;k++){
+        await supa.from('pp_itens').update({ ordem_manual:k }).eq('id', ids[k]);
+      }
+      renderPlanejamento();
+    });
+  });
+}
+$('pl-novo').addEventListener('click', () => abrirFormPeca(null));
+
+function abrirFormPeca(id){
+  const item = id ? itensCache.find(i => i.id === id) : null;
+  const corpo = `
+    <div class="field"><label>Buscar por descrição (opcional)</label><input id="f-busca" placeholder="ex.: coletor" autocomplete="off"></div>
+    <div class="field"><label>Código (9 dígitos)</label><input id="f-codigo" value="${item?.codigo9 || ''}" maxlength="9"></div>
+    <div class="field"><label>Descrição (opcional)</label><input id="f-descricao" value="${item?.descricao || ''}"></div>
+    <div class="row">
+      <div class="field"><label>Quantidade</label><input id="f-qtd" type="number" value="${item?.quantidade ?? ''}"></div>
+      <div class="field"><label>Data</label><input id="f-data" type="date" value="${item ? dataDoItem(item) : (filtroData || hojeISO())}"></div>
+      <div class="field"><label>Horário previsto (opcional)</label><input id="f-hora" type="time" value="${horaLocal(item?.horario)}"></div>
+    </div>
+    <div class="field"><label><input id="f-prioridade" type="checkbox" style="width:auto;margin-right:6px" ${item?.prioridade ? 'checked' : ''}>Prioritário</label></div>
+    <div class="field"><label>Observação</label><textarea id="f-obs" rows="2">${item?.observacao || ''}</textarea></div>
+  `;
+  const btnSalvar = document.createElement('button'); btnSalvar.className='btn'; btnSalvar.textContent='Salvar';
+  const btnCancelar = document.createElement('button'); btnCancelar.className='btn sec'; btnCancelar.textContent='Cancelar';
+  btnCancelar.addEventListener('click', fecharModal);
+  btnSalvar.addEventListener('click', async () => {
+    const codigo9 = $('f-codigo').value.trim();
+    if(!codigo9){ toast('Informe o código.', 'err'); return; }
+    const dataSel = $('f-data').value || hojeISO(), horaSel = $('f-hora').value;
+    const payload = {
+      codigo9, codigo7: codigo7(codigo9),
+      descricao: $('f-descricao').value.trim() || null,
+      quantidade: $('f-qtd').value ? Number($('f-qtd').value) : null,
+      data_prevista: dataSel,
+      horario: horaSel ? new Date(dataSel + 'T' + horaSel).toISOString() : null,
+      prioridade: $('f-prioridade').checked,
+      observacao: $('f-obs').value.trim() || null,
+      atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString()
+    };
+    if(item){
+      const { error } = await supa.from('pp_itens').update(payload).eq('id', item.id);
+      if(error){ toast('Erro ao salvar: ' + error.message, 'err'); return; }
+      await registrarLog('editar', item, item, payload);
+      toast('Peça atualizada.', 'ok');
+    } else {
+      payload.status = 'pendente'; payload.criado_por = usuarioAtual.email; payload.ordem_manual = itensCache.length;
+      const { data, error } = await supa.from('pp_itens').insert(payload).select().single();
+      if(error){ toast('Erro ao cadastrar: ' + error.message, 'err'); return; }
+      await registrarLog('cadastrar', data, null, payload);
+      toast('Peça cadastrada.', 'ok');
+    }
+    fecharModal();
+    renderPlanejamento();
+  });
+  const ligarBuscaDescricao = () => {
+    const campoCod = $('f-codigo'), campoDesc = $('f-descricao');
+    const dica = document.createElement('div'); dica.className = 'muted'; dica.style.cssText = 'font-size:11.5px;margin-top:4px;min-height:14px';
+    campoDesc.parentNode.appendChild(dica);
+    let descAuto = !item || !item.descricao;   // true = campo ainda pode ser sobrescrito pela busca
+    campoDesc.addEventListener('input', () => { descAuto = false; });
+    const buscarDesc = () => {
+      const c7 = codigo7(campoCod.value);
+      if(c7.length < 7){ dica.textContent = ''; return; }
+      const d = produtosMap.get(c7);
+      if(d){ if(descAuto) campoDesc.value = d; dica.style.color = 'var(--ok)'; dica.textContent = '✓ Encontrado no cadastro do Firewall (' + c7 + ')' + (campoCod.value.trim().length < 9 ? ' — complete até 9 dígitos' : ''); }
+      else { dica.style.color = 'var(--warn)'; dica.textContent = produtosMap.size ? 'Código ' + c7 + ' não está no cadastro do Firewall — digite a descrição.' : 'Cadastro do Firewall indisponível — digite a descrição.'; }
+    };
+    campoCod.addEventListener('input', buscarDesc);
+    buscarDesc();
+    ligarBuscaPorDescricao($('f-busca'), pr => {
+      campoCod.value = pr.cod; campoDesc.value = pr.desc || ''; descAuto = true;
+      buscarDesc(); campoCod.focus(); campoCod.setSelectionRange(campoCod.value.length, campoCod.value.length);
+    });
+  };
+  abrirModal(item ? 'Editar peça' : 'Nova peça', corpo, [btnCancelar, btnSalvar]);
+  ligarBuscaDescricao();
+}
+async function excluirPeca(id){
+  const item = itensCache.find(i => i.id === id);
+  if(!confirm(`Excluir a peça ${item?.codigo9}?`)) return;
+  const { error } = await supa.from('pp_itens').delete().eq('id', id);
+  if(error){ toast('Erro ao excluir: ' + error.message, 'err'); return; }
+  await registrarLog('excluir', item, item, null);
+  toast('Peça excluída.', 'ok');
+  renderPlanejamento();
+}
+
+/* ---------- IMPORTAÇÃO DE PLANILHA (arrastar e soltar) ---------- */
+const ALIAS_COL = {
+  material:  ['material', 'codigo', 'cod'],
+  descricao: ['descricao', 'texto breve material', 'texto breve'],
+  matcli:    ['mat cliente', 'material cliente'],
+  qtd:       ['qtd pecas', 'qtd', 'quantidade', 'pecas'],
+  caixas:    ['caixas', 'caixa'],
+  data:      ['data', 'data entrega'],
+  hora:      ['hora', 'horario'],
+  prio:      ['prioritario', 'prioridade'],
+  obs:       ['observacao', 'observacoes', 'obs'],
+  conf:      ['conferencia']
+};
+function normCab(t){ return normalizar(String(t == null ? '' : t)).replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function mapearCabecalho(linha){
+  const col = {};
+  (linha || []).forEach((c, i) => {
+    const n = normCab(c);
+    for(const [campo, nomes] of Object.entries(ALIAS_COL)) if(col[campo] === undefined && nomes.includes(n)) col[campo] = i;
+  });
+  return col;
+}
+const p2 = n => String(n).padStart(2, '0');
+function lerDataCel(v){
+  if(v == null || v === '') return null;
+  if(typeof v === 'number'){
+    const d = XLSX.SSF.parse_date_code(v);
+    if(!d || d.y < 2000 || d.y > 2100) return null;
+    const min = Math.round((v % 1) * 1440);
+    return { iso: `${d.y}-${p2(d.m)}-${p2(d.d)}`, hora: min > 0 ? { H: Math.floor(min / 60) % 24, M: min % 60 } : null };
+  }
+  const s = String(v).trim(); let m;
+  if((m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/))){
+    let y = +m[3]; if(y < 100) y += 2000;
+    const d = new Date(y, +m[2] - 1, +m[1]);
+    return d.getFullYear() === y && d.getMonth() === +m[2] - 1 && d.getDate() === +m[1] ? { iso: `${y}-${p2(m[2])}-${p2(m[1])}`, hora: null } : null;
+  }
+  if((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return { iso: `${m[1]}-${m[2]}-${m[3]}`, hora: null };
+  return null;
+}
+function lerHoraCel(v){
+  if(v == null || v === '') return { vazio: true };
+  if(typeof v === 'number'){
+    const min = Math.round((v % 1) * 1440);
+    return { H: Math.floor(min / 60) % 24, M: min % 60 };
+  }
+  const m = String(v).trim().match(/^(\d{1,2})\s*(?::|h|hs|hr|hrs|horas)?\s*(\d{2})?\s*(?:h|hs|hr|hrs|horas)?$/i);
+  if(!m) return null;
+  const H = +m[1], M = m[2] ? +m[2] : 0;
+  return H < 24 && M < 60 ? { H, M } : null;
+}
+function lerQtdCel(v){
+  if(typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  let s = String(v == null ? '' : v).trim().replace(/\s/g, '');
+  if(!s) return NaN;
+  if(/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return Number(s.replace(',', '.'));
+}
+async function lerPlanilhaPrograma(file){
+  if(!window.XLSX) throw new Error('A biblioteca de leitura de Excel não carregou (verifique a internet e recarregue a página).');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const ignorar = ['exemplo', 'instrucoes', 'inventario'];
+  const nomes = wb.SheetNames.filter(n => !ignorar.includes(normalizar(n).trim()));
+  nomes.sort((a, b) => (normalizar(b).trim() === 'programa') - (normalizar(a).trim() === 'programa'));
+  for(const nome of nomes){
+    const ws = wb.Sheets[nome]; if(!ws || !ws['!ref']) continue;
+    const r0 = XLSX.utils.decode_range(ws['!ref']).s.r;
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true });
+    for(let h = 0; h < Math.min(rows.length, 15); h++){
+      const col = mapearCabecalho(rows[h]);
+      if(col.material === undefined || col.qtd === undefined || col.data === undefined) continue;
+      const linhas = [];
+      for(let i = h + 1; i < rows.length; i++){
+        const r = rows[i], pega = c => (col[c] === undefined ? null : r[col[c]]);
+        const campos = ['material', 'descricao', 'qtd', 'data', 'hora', 'prio', 'obs'].map(pega);
+        if(campos.every(v => v == null || String(v).trim() === '')) continue;   // linha em branco
+        linhas.push(interpretarLinha(r0 + i + 1, pega));
+      }
+      return { aba: nome, linhas };
+    }
+  }
+  throw new Error('Não encontrei a aba "Programa" com os títulos Material, Qtd peças e Data.');
+}
+function interpretarLinha(nLinha, pega){
+  const erros = [];
+  let matRaw = pega('material'); if(typeof matRaw === 'number') matRaw = String(Math.round(matRaw));
+  const material = String(matRaw == null ? '' : matRaw).replace(/\D/g, '');
+  if(material.length !== 9) erros.push('Material deve ter 9 dígitos');
+  const qtd = lerQtdCel(pega('qtd'));
+  if(!(qtd > 0) || !Number.isInteger(qtd)) erros.push('Qtd peças inválida');
+  const dt = lerDataCel(pega('data'));
+  if(!dt) erros.push('Data inválida (use dd/mm/aaaa)');
+  let hora = null; const h = lerHoraCel(pega('hora'));
+  if(h === null) erros.push('Hora inválida (use hh:mm)');
+  else if(!h.vazio) hora = h;
+  else if(dt && dt.hora) hora = dt.hora;
+  const pr = String(pega('prio') == null ? '' : pega('prio')).trim().toLowerCase();
+  if(pr && !['x', 'sim', 's', '1', 'true'].includes(pr)) erros.push('Prioritário: use X');
+  const txt = c => { const v = pega(c); return v == null || String(v).trim() === '' ? null : String(v).trim(); };
+  return {
+    nLinha, material, descricao: txt('descricao'), qtd: Number.isFinite(qtd) ? qtd : null,
+    dataIso: dt ? dt.iso : null, hora, prio: !!pr && !erros.includes('Prioritário: use X'), obs: txt('obs'), erros, dup: false
+  };
+}
+function chaveImport(codigo9, dataIso, hora, qtd){ return [codigo9, dataIso, hora ? `${p2(hora.H)}:${p2(hora.M)}` : '', qtd].join('|'); }
+
+async function tratarArquivoPlanilha(file){
+  if(!/\.(xlsx|xlsm|xls)$/i.test(file.name)){ toast('Use um arquivo Excel (.xlsx).', 'err'); return; }
+  try{
+    toast('Lendo ' + file.name + '…');
+    const res = await lerPlanilhaPrograma(file);
+    await carregarItens();
+    const existentes = new Set(itensCache.map(i => chaveImport(i.codigo9, i.data_prevista || dataDoItem(i), i.horario ? { H: new Date(i.horario).getHours(), M: new Date(i.horario).getMinutes() } : null, Number(i.quantidade))));
+    res.linhas.forEach(l => {
+      if(l.erros.length) return;
+      const k = chaveImport(l.material, l.dataIso, l.hora, l.qtd);
+      if(existentes.has(k)) l.dup = true; else existentes.add(k);   // também pega repetidas dentro do próprio arquivo
+    });
+    mostrarPreviaImportacao(res, file.name);
+  }catch(e){ console.error(e); toast('Não foi possível ler a planilha: ' + e.message, 'err'); }
+}
+function mostrarPreviaImportacao(res, nomeArq){
+  const validas = res.linhas.filter(l => !l.erros.length && !l.dup);
+  const comErro = res.linhas.filter(l => l.erros.length).length, dups = res.linhas.filter(l => l.dup).length;
+  const tr = res.linhas.map(l => {
+    const c7 = codigo7(l.material), desc = produtosMap.get(c7) || l.descricao || '';
+    const sit = l.erros.length ? l.erros.join('; ') : l.dup ? 'Já cadastrada — será ignorada' : 'OK';
+    const cls = l.erros.length ? 'imp-erro' : l.dup ? 'imp-dup' : '';
+    const dt = l.dataIso ? l.dataIso.split('-').reverse().join('/') : '—';
+    return `<tr class="${cls}"><td class="num">${l.nLinha}</td><td class="mono">${l.material || '—'}</td><td>${desc ? desc.replace(/</g, '&lt;') : '<span class="muted">—</span>'}</td><td class="num">${l.qtd ?? '—'}</td><td>${dt}</td><td>${l.hora ? p2(l.hora.H) + ':' + p2(l.hora.M) : '—'}</td><td>${l.prio ? 'X' : ''}</td><td style="${l.erros.length ? 'color:var(--danger);font-weight:600' : ''}">${sit}</td></tr>`;
+  }).join('');
+  const corpo = `<p style="font-size:13px;margin-bottom:10px"><b>${nomeArq}</b> · aba "${res.aba}" · ${res.linhas.length} linha(s) lida(s): <b style="color:var(--ok)">${validas.length} para importar</b>, <b style="color:var(--danger)">${comErro} com erro</b>, ${dups} já cadastrada(s).${comErro ? '<br><span class="muted">As linhas com erro não serão importadas — corrija na planilha e arraste de novo (as que já entraram são ignoradas).</span>' : ''}</p>
+    <div class="tbl-wrap" style="max-height:50vh"><table><thead><tr><th class="num">Linha</th><th>Material</th><th>Descrição</th><th class="num">Qtd</th><th>Data</th><th>Hora</th><th>Prior.</th><th>Situação</th></tr></thead><tbody>${tr || '<tr><td colspan="8" class="empty">Nenhuma linha preenchida na planilha.</td></tr>'}</tbody></table></div>`;
+  const btnOk = document.createElement('button'); btnOk.className = 'btn ok2'; btnOk.textContent = `Importar ${validas.length} peça(s)`; btnOk.disabled = validas.length === 0;
+  const btnCancel = document.createElement('button'); btnCancel.className = 'btn sec'; btnCancel.textContent = 'Cancelar'; btnCancel.addEventListener('click', fecharModal);
+  btnOk.addEventListener('click', async () => { btnOk.disabled = true; btnOk.textContent = 'Importando…'; await executarImportacao(validas, nomeArq); });
+  abrirModal('Importar planilha', corpo, [btnCancel, btnOk]);
+  $('modal').style.width = 'min(980px,96vw)';
+}
+async function executarImportacao(linhas, nomeArq){
+  const agora = new Date().toISOString(); let feitas = 0;
+  const base = itensCache.length;
+  const payloads = linhas.map((l, i) => ({
+    codigo9: l.material, codigo7: codigo7(l.material), descricao: produtosMap.get(codigo7(l.material)) || l.descricao || null, quantidade: l.qtd,
+    data_prevista: l.dataIso,
+    horario: l.hora ? new Date(`${l.dataIso}T${p2(l.hora.H)}:${p2(l.hora.M)}`).toISOString() : null,
+    prioridade: l.prio, observacao: l.obs, status: 'pendente', ordem_manual: base + i,
+    criado_por: usuarioAtual.email, atualizado_por: usuarioAtual.email, atualizado_em: agora
+  }));
+  for(let i = 0; i < payloads.length; i += 200){
+    const lote = payloads.slice(i, i + 200);
+    const { data, error } = await supa.from('pp_itens').insert(lote).select('id,codigo9,quantidade');
+    if(error){
+      toast(`Erro após ${feitas} peça(s) importada(s): ${error.message}. Ao arrastar a planilha de novo, as já importadas são ignoradas.`, 'err');
+      fecharModal(); renderPlanejamento(); return;
+    }
+    feitas += data.length;
+    await supa.from('pp_logs').insert(data.map(r => ({ item_id: r.id, acao: 'importar', usuario: usuarioAtual.email, antes: null, depois: { codigo9: r.codigo9, quantidade: r.quantidade, arquivo: nomeArq } })));
+  }
+  const dias = [...new Set(linhas.map(l => l.dataIso))];
+  filtroData = dias.length === 1 ? dias[0] : '';
+  document.querySelectorAll('.flt-data').forEach(e => e.value = filtroData);
+  fecharModal();
+  toast(`${feitas} peça(s) importada(s).`, 'ok');
+  renderPlanejamento();
+}
+function ligarDropPlanilha(){
+  const drop = $('pl-drop'), inp = $('pl-arquivo'), pag = $('page-planejamento');
+  const temArquivo = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+  const pode = () => nivelUsuario && PAPEIS[nivelUsuario].editar.planejamento;
+  $('pl-importar').addEventListener('click', () => inp.click());
+  drop.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', () => { if(inp.files[0]) tratarArquivoPlanilha(inp.files[0]); inp.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev => pag.addEventListener(ev, e => { if(!temArquivo(e) || !pode()) return; e.preventDefault(); drop.classList.add('over'); }));
+  pag.addEventListener('dragleave', e => { if(!pag.contains(e.relatedTarget)) drop.classList.remove('over'); });
+  pag.addEventListener('drop', e => {
+    if(!temArquivo(e)) return;
+    e.preventDefault(); drop.classList.remove('over');
+    if(pode() && e.dataTransfer.files[0]) tratarArquivoPlanilha(e.dataTransfer.files[0]);
+  });
+  // soltar um arquivo fora da área não deve abrir o arquivo no navegador
+  ['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => { if(temArquivo(e)) e.preventDefault(); }));
+}
+
+/* ---------- ACOMPANHAMENTO (GP12) ---------- */
+async function renderAcompanhamento(){
+  await carregarItens();
+  const podeEditar = PAPEIS[nivelUsuario].editar.acompanhamento;
+  const tb = $('ac-tbody'); tb.innerHTML = '';
+  const cards = $('ac-cards'); cards.innerHTML = '';
+  const fila = ordenarFila(filtrarDia(itensCache.filter(i => i.status !== 'finalizado')));
+  if(fila.length === 0){ tb.innerHTML = '<tr><td colspan="9" class="empty">Nenhuma peça na fila para este dia.</td></tr>'; cards.innerHTML = '<div class="empty">Nenhuma peça na fila para este dia.</div>'; return; }
+  fila.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.className = classeLinha(item);
+    tr.innerHTML = `
+      <td class="mono">${item.codigo9}</td>
+      <td>${descItem(item)}</td>
+      ${celulasQtd(item)}
+      <td>${item.horario ? fmtDT(item.horario) : '<span class="muted">sem horário</span>'}</td>
+      <td>${item.prioridade ? '<span class="chip prio">Prioritário</span>' : '—'}</td>
+      <td>${chipStatus(item.status)}</td>
+      <td style="white-space:pre-line">${item.observacao || ''}</td>
+      <td style="white-space:nowrap">
+        ${podeEditar && item.status === 'aguardando_retrabalho' ? '<span class="muted" style="font-size:12px">aguardando a Produção</span>' : ''}
+        ${podeEditar && item.status !== 'aguardando_retrabalho' ? `
+          ${item.status==='pendente' ? `<button class="btn sm sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
+          <button class="btn sm ok2" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
+          <button class="btn sm warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
+        ` : ''}
+      </td>`;
+    tb.appendChild(tr);
+    cards.appendChild(montarCartao(item, podeEditar));
+  });
+  if(podeEditar){
+    $('page-acompanhamento').querySelectorAll('[data-ac]').forEach(b => b.addEventListener('click', () => b.dataset.ac === 'aguardando_retrabalho' ? pedirMotivoRetrabalho(b.dataset.id) : b.dataset.ac === 'finalizado' ? pedirQtdInspecionada(b.dataset.id) : mudarStatus(b.dataset.id, b.dataset.ac)));
+  }
+}
+function horaCurta(iso){
+  const d = new Date(iso), hoje = new Date();
+  const hm = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return d.toDateString() === hoje.toDateString() ? hm : d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + ' ' + hm;
+}
+function montarCartao(item, podeEditar){
+  const el = document.createElement('div');
+  el.className = 'pc ' + classeLinha(item);
+  const falta = faltaInspecionar(item);
+  const retr = item.status === 'aguardando_retrabalho';
+  el.innerHTML = `
+    <div class="pc-top"><span class="pc-cod">${item.codigo9}</span><span class="pc-hora">${item.horario ? horaCurta(item.horario) : 'sem horário'}</span></div>
+    <div class="pc-desc">${descItem(item)}</div>
+    <div class="pc-chips">${item.prioridade ? '<span class="chip prio">Prioritário</span>' : ''}${chipStatus(item.status)}</div>
+    <div class="pc-nums">
+      <div><small>Total</small><b>${item.quantidade ?? '—'}</b>${flagInventario(item)}</div>
+      <div><small>Inspec.</small><b>${Number(item.qtd_inspecionada || 0)}</b></div>
+      <div><small>Falta</small><b>${falta ?? '—'}</b></div>
+    </div>
+    ${item.observacao ? `<div class="pc-obs">${item.observacao}</div>` : ''}
+    ${podeEditar ? (retr ? '<div class="pc-aguarda">Aguardando a Produção</div>' : `<div class="pc-btns">
+      ${item.status==='pendente' ? `<button class="btn sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
+      <button class="btn ok2 fin" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
+      <button class="btn warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
+    </div>`) : ''}`;
+  return el;
+}
+function renderFinalizados(){
+  const tb = $('ac-fin-tbody'); tb.innerHTML = '';
+  const fin = filtrarDia(itensCache.filter(i => i.status === 'finalizado'))
+    .sort((a,b) => new Date(b.atualizado_em) - new Date(a.atualizado_em));
+  $('ac-fin-count').textContent = `(${fin.length})`;
+  if(fin.length === 0){ tb.innerHTML = '<tr><td colspan="7" class="empty">Nenhuma peça finalizada neste dia.</td></tr>'; return; }
+  fin.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${item.codigo9}</td>
+      <td>${descItem(item)}</td>
+      <td class="num">${item.quantidade ?? '—'}</td>
+      <td class="num insp">${Number(item.qtd_inspecionada || 0)}</td>
+      <td>${item.horario ? fmtDT(item.horario) : '<span class="muted">sem horário</span>'}</td>
+      <td>${fmtDT(item.atualizado_em)}</td>
+      <td>${item.atualizado_por || '—'}</td>`;
+    tb.appendChild(tr);
+  });
+}
+function pedirQtdInspecionada(id){
+  const item = itensCache.find(i => i.id === id);
+  const jaInsp = Number(item.qtd_inspecionada || 0), falta = faltaInspecionar(item);
+  const resumo = item.quantidade != null
+    ? `Total: <b>${item.quantidade}</b> · já inspecionado: <b>${jaInsp}</b> · falta: <b>${falta}</b>`
+    : `Sem quantidade total cadastrada — esta inspeção finaliza a peça. Já inspecionado: <b>${jaInsp}</b>`;
+  const btnOk = document.createElement('button'); btnOk.className = 'btn ok2'; btnOk.textContent = 'Registrar';
+  const btnCancel = document.createElement('button'); btnCancel.className = 'btn sec'; btnCancel.textContent = 'Cancelar';
+  btnCancel.addEventListener('click', fecharModal);
+  const registrar = async () => {
+    const n = Number($('f-qtd-insp').value);
+    if(!(n > 0)){ toast('Informe uma quantidade maior que zero.', 'err'); return; }
+    fecharModal();
+    await registrarInspecao(id, n);
+  };
+  btnOk.addEventListener('click', registrar);
+  abrirModal(`Inspeção — ${item.codigo9}`, `<p style="margin-bottom:12px;font-size:13px">${resumo}</p><div class="field"><label>Quantidade inspecionada agora</label><input id="f-qtd-insp" type="number" min="1" value="${falta || ''}"></div>`, [btnCancel, btnOk]);
+  $('f-qtd-insp').addEventListener('keydown', e => { if(e.key === 'Enter') registrar(); });
+  $('f-qtd-insp').focus(); $('f-qtd-insp').select();
+}
+async function registrarInspecao(id, n){
+  const item = itensCache.find(i => i.id === id);
+  const anterior = Number(item.qtd_inspecionada || 0), novo = anterior + n;
+  const completo = item.quantidade == null || novo >= Number(item.quantidade);
+  const payload = { qtd_inspecionada: novo, status: completo ? 'finalizado' : 'em_inspecao', atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
+  if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
+  await registrarLog(completo ? 'inspecao_finalizada' : 'inspecao_parcial', item, { qtd_inspecionada:anterior, status:item.status }, { qtd_inspecionada:novo, status:payload.status, inspecionado_agora:n });
+  toast(completo ? 'Peça finalizada.' : `Inspeção parcial registrada (${novo}/${item.quantidade}).`, 'ok');
+  renderAcompanhamento();
+}
+function pedirMotivoRetrabalho(id){
+  const btnOk = document.createElement('button'); btnOk.className = 'btn warn'; btnOk.textContent = 'Enviar para retrabalho';
+  const btnCancel = document.createElement('button'); btnCancel.className = 'btn sec'; btnCancel.textContent = 'Cancelar';
+  btnCancel.addEventListener('click', fecharModal);
+  btnOk.addEventListener('click', async () => {
+    const motivo = $('f-motivo').value.trim();
+    if(!motivo){ toast('Informe o motivo do retrabalho.', 'err'); return; }
+    fecharModal();
+    await mudarStatus(id, 'aguardando_retrabalho', motivo);
+  });
+  abrirModal('Motivo do retrabalho', '<div class="field"><label>Qual o problema encontrado?</label><textarea id="f-motivo" rows="3"></textarea></div>', [btnCancel, btnOk]);
+  $('f-motivo').focus();
+}
+async function mudarStatus(id, novoStatus, motivo){
+  const item = itensCache.find(i => i.id === id);
+  const payload = { status: novoStatus, atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  if(novoStatus === 'aguardando_retrabalho' && motivo){
+    const carimbo = `[Retrabalho ${fmtDT(new Date().toISOString())} · ${usuarioAtual.email}] ${motivo}`;
+    payload.observacao = item.observacao ? item.observacao + '\n' + carimbo : carimbo;
+  }
+  const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
+  if(error){ toast('Erro ao atualizar status: ' + error.message, 'err'); return; }
+  await registrarLog('status:' + novoStatus, item, { status:item.status }, { status:novoStatus, ...(motivo ? { motivo } : {}) });
+  toast('Status atualizado.', 'ok');
+  renderAcompanhamento();
+}
+$('ac-atualizar').addEventListener('click', renderAcompanhamento);
+
+/* ---------- RETRABALHO ---------- */
+async function renderRetrabalho(){
+  await carregarItens();
+  const podeEditar = PAPEIS[nivelUsuario].editar.retrabalho;
+  const tb = $('rt-tbody'); tb.innerHTML = '';
+  const fila = itensCache.filter(i => i.status === 'aguardando_retrabalho');
+  if(fila.length === 0){ tb.innerHTML = '<tr><td colspan="5" class="empty">Nenhuma peça aguardando retrabalho.</td></tr>'; return; }
+  fila.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${item.codigo9}</td>
+      <td>${descItem(item)}</td>
+      <td class="num">${item.quantidade ?? '—'}</td>
+      <td>${item.horario ? fmtDT(item.horario) : '—'}</td>
+      <td style="white-space:pre-line">${item.observacao || ''}</td>
+      <td>${podeEditar ? `<button class="btn sm ok2" data-fim="${item.id}">Retrabalho finalizado</button>` : ''}</td>`;
+    tb.appendChild(tr);
+  });
+  if(podeEditar){
+    tb.querySelectorAll('[data-fim]').forEach(b => b.addEventListener('click', () => finalizarRetrabalho(b.dataset.fim)));
+  }
+}
+async function finalizarRetrabalho(id){
+  const item = itensCache.find(i => i.id === id);
+  const payload = { status:'pendente', atualizado_por: usuarioAtual.email, atualizado_em: new Date().toISOString() };
+  const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
+  if(error){ toast('Erro: ' + error.message, 'err'); return; }
+  await registrarLog('retrabalho_finalizado', item, { status:'aguardando_retrabalho' }, { status:'pendente' });
+  toast('Peça voltou para a fila de inspeção.', 'ok');
+  renderRetrabalho();
+}
+$('rt-atualizar').addEventListener('click', renderRetrabalho);
+
+/* ---------- INVENTÁRIO ---------- */
+let invRascunho = [];     // [{codigo9, quantidade}] — cópia de trabalho
+let invOriginal = '';     // snapshot para detectar alterações não salvas
+async function renderInventario(){
+  const podeEditar = PAPEIS[nivelUsuario].editar.inventario;
+  const dia = $('inv-data').value || hojeISO();
+  const ativo = await buscarTudo(() => supa.from('pp_inventario').select('*').eq('ativo', true).eq('data_ref', dia).order('id'));
+  if(ativo.error){ toast('Erro ao carregar inventário: ' + ativo.error.message, 'err'); return; }
+  invRascunho = ativo.data.map(l => ({ codigo9:l.codigo9, quantidade:Number(l.quantidade) }));
+  invOriginal = JSON.stringify(invRascunho);
+  const meta = ativo.data[0];
+  $('inv-meta').textContent = meta ? `— lançado em ${fmtDT(meta.criado_em)} por ${meta.criado_por}` : '— nenhum inventário lançado para este dia';
+  document.querySelectorAll('#page-inventario .filters button, #page-inventario .filters input').forEach(e => e.disabled = !podeEditar);
+  desenharInventario(podeEditar);
+  // histórico: últimos lotes inativos
+  const h = await supa.from('pp_inventario').select('lote,codigo9,quantidade,criado_em,criado_por,data_ref').eq('ativo', false).order('criado_em', { ascending:false }).limit(3000);
+  const tb = $('inv-hist'); tb.innerHTML = '';
+  const lotes = new Map();
+  (h.data || []).forEach(l => {
+    if(!lotes.has(l.lote)) lotes.set(l.lote, { lote:l.lote, quando:l.criado_em, por:l.criado_por, dia:l.data_ref, linhas:[] });
+    lotes.get(l.lote).linhas.push(l);
+  });
+  if(lotes.size === 0){ tb.innerHTML = '<tr><td colspan="6" class="empty">Sem histórico ainda.</td></tr>'; return; }
+  [...lotes.values()].slice(0, 30).forEach(L => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${L.dia ? L.dia.split('-').reverse().join('/') : '—'}</td><td>${fmtDT(L.quando)}</td><td>${L.por}</td><td class="num">${L.linhas.length}</td><td class="num">${L.linhas.reduce((a,x)=>a+Number(x.quantidade),0)}</td><td><button class="btn sm sec">Ver</button></td>`;
+    tr.querySelector('button').addEventListener('click', () => {
+      const btn = document.createElement('button'); btn.className='btn sec'; btn.textContent='Fechar'; btn.addEventListener('click', fecharModal);
+      abrirModal(`Inventário de ${fmtDT(L.quando)}`, `<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Qtd</th></tr></thead><tbody>${L.linhas.map(x=>`<tr><td class="mono">${x.codigo9}</td><td class="num">${x.quantidade}</td></tr>`).join('')}</tbody></table></div>`, [btn]);
+    });
+    tb.appendChild(tr);
+  });
+}
+function desenharInventario(podeEditar){
+  const tb = $('inv-tbody'); tb.innerHTML = '';
+  if(invRascunho.length === 0){ tb.innerHTML = '<tr><td colspan="4" class="empty">Inventário vazio. Adicione códigos acima.</td></tr>'; }
+  invRascunho.forEach((l, idx) => {
+    const tr = document.createElement('tr'); tr.className = 'inv-linha';
+    const d = produtosMap.get(codigo7(l.codigo9));
+    tr.innerHTML = `<td class="mono">${l.codigo9}</td><td>${d || '<span class="muted">—</span>'}</td>
+      <td class="num"><input type="number" min="0" value="${l.quantidade}" style="width:100px;text-align:right" ${podeEditar ? '' : 'disabled'}></td>
+      <td>${podeEditar ? '<button class="btn sm danger">✕</button>' : ''}</td>`;
+    if(podeEditar){
+      tr.querySelector('input').addEventListener('change', e => { invRascunho[idx].quantidade = Number(e.target.value) || 0; marcarAlterado(); });
+      tr.querySelector('button').addEventListener('click', () => { invRascunho.splice(idx, 1); desenharInventario(true); marcarAlterado(); });
+    }
+    tb.appendChild(tr);
+  });
+  marcarAlterado();
+}
+function marcarAlterado(){
+  const alt = JSON.stringify(invRascunho) !== invOriginal;
+  $('inv-aviso').textContent = alt ? 'Alterações não salvas — o inventário só vale (e as bolinhas só mudam) depois de "Salvar inventário".' : '';
+}
+function adicionarLinhaInventario(){
+  const cod = $('inv-cod').value.trim(), qtd = Number($('inv-qtd').value);
+  if(!cod){ toast('Informe o código.', 'err'); return; }
+  if(!($('inv-qtd').value !== '' && qtd >= 0)){ toast('Informe a quantidade.', 'err'); return; }
+  const ex = invRascunho.find(l => l.codigo9 === cod);
+  if(ex) ex.quantidade += qtd; else invRascunho.push({ codigo9:cod, quantidade:qtd });
+  $('inv-cod').value = ''; $('inv-qtd').value = ''; $('inv-cod').focus();
+  desenharInventario(true);
+}
+async function salvarInventario(){
+  if(invRascunho.length === 0){ toast('Inventário vazio — adicione ao menos um código.', 'err'); return; }
+  const dia = $('inv-data').value || hojeISO();
+  if(!confirm(`Salvar este inventário para ${dia.split('-').reverse().join('/')}? Ele substitui o inventário desse dia (o anterior vai para o histórico).`)) return;
+  const lote = (crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+  const linhas = invRascunho.map(l => ({ lote, codigo9:l.codigo9, codigo7:codigo7(l.codigo9), quantidade:l.quantidade, data_ref:dia, ativo:false, criado_por:usuarioAtual.email }));
+  // 1) grava o novo (inativo)  2) desativa o antigo  3) ativa o novo — se algo falhar no meio, nenhum dado se perde
+  for(let i=0;i<linhas.length;i+=500){
+    const { error } = await supa.from('pp_inventario').insert(linhas.slice(i, i+500));
+    if(error){ toast('Erro ao salvar inventário: ' + error.message, 'err'); return; }
+  }
+  let r = await supa.from('pp_inventario').update({ ativo:false }).eq('ativo', true).eq('data_ref', dia);
+  if(r.error){ toast('Erro ao arquivar o inventário anterior: ' + r.error.message, 'err'); return; }
+  r = await supa.from('pp_inventario').update({ ativo:true }).eq('lote', lote);
+  if(r.error){ toast('Erro ao ativar o novo inventário: ' + r.error.message, 'err'); return; }
+  await registrarLog('inventario_salvo', null, null, { dia, itens: linhas.length, total: linhas.reduce((a,x)=>a+x.quantidade,0) });
+  toast('Inventário salvo.', 'ok');
+  renderInventario();
+}
+$('inv-data').addEventListener('change', renderInventario);
+$('inv-hoje').addEventListener('click', () => { $('inv-data').value = hojeISO(); renderInventario(); });
+ligarBuscaPorDescricao($('inv-busca'), pr => { $('inv-cod').value = pr.cod; $('inv-qtd').focus(); });
+$('inv-add').addEventListener('click', adicionarLinhaInventario);
+$('inv-qtd').addEventListener('keydown', e => { if(e.key === 'Enter') adicionarLinhaInventario(); });
+$('inv-salvar').addEventListener('click', salvarInventario);
+$('inv-descartar').addEventListener('click', renderInventario);
+
+/* ---------- AUDITORIA ---------- */
+async function renderAuditoria(){
+  const tb = $('au-tbody'); tb.innerHTML = '<tr><td colspan="5" class="empty">Carregando…</td></tr>';
+  const { data, error } = await supa.from('pp_logs').select('*, pp_itens(codigo9)').order('criado_em', { ascending:false }).limit(300);
+  if(error){ tb.innerHTML = `<tr><td colspan="5" class="empty">Erro: ${error.message}</td></tr>`; return; }
+  if(!data || data.length === 0){ tb.innerHTML = '<tr><td colspan="5" class="empty">Nenhum registro ainda.</td></tr>'; return; }
+  tb.innerHTML = '';
+  data.forEach(l => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDT(l.criado_em)}</td>
+      <td>${l.usuario}</td>
+      <td>${l.acao}</td>
+      <td class="mono">${l.pp_itens?.codigo9 || '—'}</td>
+      <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(JSON.stringify(l.antes||{})+' → '+JSON.stringify(l.depois||{})).replace(/"/g,'&quot;')}">${l.depois ? JSON.stringify(l.depois) : '—'}</td>`;
+    tb.appendChild(tr);
+  });
+}
+$('au-atualizar').addEventListener('click', renderAuditoria);
+
+/* =====================================================================
+   REALTIME + AUTO-REFRESH
+===================================================================== */
+async function iniciarAppPosLogin(){
+  await carregarProdutos();
+  const ativa = document.querySelector('.nav-item.active')?.dataset.page;
+  if(ativa) showPage(ativa);
+  supa.channel('pp_itens_changes')
+    .on('postgres_changes', { event:'*', schema:'public', table:'pp_itens' }, () => {
+      const atual = document.querySelector('.nav-item.active')?.dataset.page;
+      if(atual) showPage(atual);
+    })
+    .subscribe();
+  setInterval(() => {
+    const atual = document.querySelector('.nav-item.active')?.dataset.page;
+    if(atual === 'acompanhamento' || atual === 'planejamento') showPage(atual);
+  }, 60000);
+}
+
+initFiltrosDia();
+ligarDropPlanilha();
+$('inv-data').value = hojeISO();
+authInit();
+</script>
+</body>
+</html>
