@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.11</title>
+<title>Programa de Inspeção V1.12</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -79,6 +79,12 @@ tr.linha-prioridade td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .chip.c-em_inspecao{background:var(--accent)}
 .chip.c-finalizado{background:var(--ok)}
 .chip.c-aguardando_retrabalho{background:var(--warn)}
+.chip.c-amostra{background:#7B5EA7}
+.amostra-box{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:4px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.amostra-box b{font-size:13.5px}.amostra-box small{display:block;color:var(--muted);font-size:11.5px;font-weight:400}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-shrink:0}
+.seg button{border:0;background:#fff;padding:10px 18px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;min-width:64px}
+.seg button.on-nao{background:var(--muted);color:#fff}.seg button.on-sim{background:#7B5EA7;color:#fff}
 .chip.prio{background:var(--danger)}
 .muted{color:var(--muted)}
 .mono{font-family:var(--mono)}
@@ -168,8 +174,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
   .pc-nums b{font-family:var(--mono);font-size:17px}
   .pc-obs{font-size:12px;color:var(--muted);white-space:pre-line;margin-bottom:8px;max-height:3.6em;overflow:hidden}
   .pc-btns{display:flex;gap:6px}
-  .pc-btns .btn{flex:1;min-height:46px;font-size:14px;padding:0 6px}
-  .pc-btns .btn.fin{flex:1.6}
+  .pc-btns .btn{flex:1 1 0;min-width:0;min-height:46px;font-size:14px;padding:0 4px;justify-content:center;text-align:center}
   .pc-wrap{position:relative;border-radius:10px;overflow:hidden}
   .pc-fundo{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-weight:700;font-size:15px;color:#fff;border-radius:10px;background:var(--muted)}
   .pc-fundo.ok{background:var(--ok)}.pc-fundo.warn{background:var(--warn)}
@@ -191,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.11</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.12</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.11 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.12 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -238,7 +243,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
       <div class="card">
         <h3>Finalizados <span class="muted" id="ac-fin-count" style="font-weight:400"></span></h3>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Inspec.</th><th>Horário previsto</th><th>Finalizado em</th><th>Finalizado por</th></tr></thead>
+          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Inspec.</th><th>Horário previsto</th><th>Amostragem</th><th>Finalizado em</th><th>Finalizado por</th></tr></thead>
           <tbody id="ac-fin-tbody"></tbody>
         </table></div>
       </div>
@@ -1054,6 +1059,14 @@ async function renderAcompanhamento(){
     $('page-acompanhamento').querySelectorAll('[data-ac]').forEach(b => b.addEventListener('click', () => b.dataset.ac === 'aguardando_retrabalho' ? pedirMotivoRetrabalho(b.dataset.id) : b.dataset.ac === 'finalizado' ? pedirQtdInspecionada(b.dataset.id) : mudarStatus(b.dataset.id, b.dataset.ac)));
   }
 }
+function horaCard(item){
+  if(!filtroData){   // "Todos os dias": sempre mostra a data do item
+    const dia = dataDoItem(item).split('-').reverse().join('/');
+    const hm = item.horario ? new Date(item.horario).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : 'sem horário';
+    return dia + ' · ' + hm;
+  }
+  return item.horario ? horaCurta(item.horario) : 'sem horário';
+}
 function horaCurta(iso){
   const d = new Date(iso), hoje = new Date();
   const hm = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
@@ -1065,9 +1078,9 @@ function montarCartao(item, podeEditar){
   const falta = faltaInspecionar(item);
   const retr = item.status === 'aguardando_retrabalho';
   el.innerHTML = `
-    <div class="pc-top"><span class="pc-cod">${item.codigo9}</span><span class="pc-hora">${item.horario ? horaCurta(item.horario) : 'sem horário'}</span></div>
+    <div class="pc-top"><span class="pc-cod">${item.codigo9}</span><span class="pc-hora">${horaCard(item)}</span></div>
     <div class="pc-desc">${descItem(item)}</div>
-    <div class="pc-chips">${item.prioridade ? '<span class="chip prio">Prioritário</span>' : ''}${chipStatus(item.status)}</div>
+    <div class="pc-chips">${item.prioridade ? '<span class="chip prio">Prioritário</span>' : ''}${chipStatus(item.status)}${item.amostragem ? '<span class="chip c-amostra">Amostragem</span>' : ''}</div>
     <div class="pc-nums">
       <div><small>Total</small><b>${item.quantidade ?? '—'}</b>${flagInventario(item)}</div>
       <div><small>Inspec.</small><b>${Number(item.qtd_inspecionada || 0)}</b></div>
@@ -1075,8 +1088,8 @@ function montarCartao(item, podeEditar){
     </div>
     ${item.observacao ? `<div class="pc-obs">${item.observacao}</div>` : ''}
     ${podeEditar ? (retr ? '<div class="pc-aguarda">Aguardando a Produção</div>' : `<div class="pc-btns">
-      ${item.status==='pendente' ? `<button class="btn sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
       <button class="btn ok2 fin" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
+      ${item.status==='pendente' ? `<button class="btn sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
       <button class="btn warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
     </div>`) : ''}`;
   if(!podeEditar || retr) return el;
@@ -1129,7 +1142,7 @@ function renderFinalizados(){
   const fin = filtrarDia(itensCache.filter(i => i.status === 'finalizado'))
     .sort((a,b) => new Date(b.atualizado_em) - new Date(a.atualizado_em));
   $('ac-fin-count').textContent = `(${fin.length})`;
-  if(fin.length === 0){ tb.innerHTML = '<tr><td colspan="7" class="empty">Nenhuma peça finalizada neste dia.</td></tr>'; return; }
+  if(fin.length === 0){ tb.innerHTML = '<tr><td colspan="8" class="empty">Nenhuma peça finalizada neste dia.</td></tr>'; return; }
   fin.forEach(item => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -1138,6 +1151,7 @@ function renderFinalizados(){
       <td class="num">${item.quantidade ?? '—'}</td>
       <td class="num insp">${Number(item.qtd_inspecionada || 0)}</td>
       <td>${item.horario ? fmtDT(item.horario) : '<span class="muted">sem horário</span>'}</td>
+      <td>${item.amostragem ? '<span class="chip c-amostra">Sim</span>' : 'Não'}</td>
       <td>${fmtDT(item.atualizado_em)}</td>
       <td>${item.atualizado_por || '—'}</td>`;
     tb.appendChild(tr);
@@ -1156,21 +1170,34 @@ function pedirQtdInspecionada(id){
     const n = Number($('f-qtd-insp').value);
     if(!(n > 0)){ toast('Informe uma quantidade maior que zero.', 'err'); return; }
     fecharModal();
-    await registrarInspecao(id, n);
+    await registrarInspecao(id, n, amostragem);
   };
+  let amostragem = false;
   btnOk.addEventListener('click', registrar);
-  abrirModal(`Inspeção — ${item.codigo9}`, `<p style="margin-bottom:12px;font-size:13px">${resumo}</p><div class="field"><label>Quantidade inspecionada agora</label><input id="f-qtd-insp" type="number" min="1" value="${falta || ''}"></div>`, [btnCancel, btnOk]);
+  abrirModal(`Inspeção — ${item.codigo9}`, `<p style="margin-bottom:12px;font-size:13px">${resumo}</p><div class="field"><label>Quantidade inspecionada agora</label><input id="f-qtd-insp" type="number" min="1" value="${falta || ''}"></div>
+    <div class="amostra-box"><div><b>Foi feita amostragem?</b><small>Marque Sim se não foram inspecionadas todas as peças</small></div>
+      <div class="seg" id="f-amostra"><button type="button" data-v="0" class="on-nao">Não</button><button type="button" data-v="1">Sim</button></div></div>`, [btnCancel, btnOk]);
+  document.querySelectorAll('#f-amostra button').forEach(b => b.addEventListener('click', () => {
+    amostragem = b.dataset.v === '1';
+    document.querySelectorAll('#f-amostra button').forEach(x => x.className = (x === b) ? (amostragem ? 'on-sim' : 'on-nao') : '');
+  }));
   $('f-qtd-insp').addEventListener('keydown', e => { if(e.key === 'Enter') registrar(); });
   $('f-qtd-insp').focus(); $('f-qtd-insp').select();
 }
-async function registrarInspecao(id, n){
+async function registrarInspecao(id, n, amostragem){
   const item = itensCache.find(i => i.id === id);
   const anterior = Number(item.qtd_inspecionada || 0), novo = anterior + n;
   const completo = item.quantidade == null || novo >= Number(item.quantidade);
   const payload = { qtd_inspecionada: novo, status: completo ? 'finalizado' : 'em_inspecao', atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() };
-  const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
+  if(amostragem) payload.amostragem = true;   // fica marcado se QUALQUER inspeção da peça foi por amostragem
+  let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
+  if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
+    delete payload.amostragem;
+    toast('Rode o SQL da V1.12 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
+  }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
-  await registrarLog(completo ? 'inspecao_finalizada' : 'inspecao_parcial', item, { qtd_inspecionada:anterior, status:item.status }, { qtd_inspecionada:novo, status:payload.status, inspecionado_agora:n });
+  await registrarLog(completo ? 'inspecao_finalizada' : 'inspecao_parcial', item, { qtd_inspecionada:anterior, status:item.status }, { qtd_inspecionada:novo, status:payload.status, inspecionado_agora:n, amostragem: !!amostragem });
   toast(completo ? 'Peça finalizada.' : `Inspeção parcial registrada (${novo}/${item.quantidade}).`, 'ok');
   renderAcompanhamento();
 }
