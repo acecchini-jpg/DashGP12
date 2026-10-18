@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.16</title>
+<title>Programa de Inspeção V1.17</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -196,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.16</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.17</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.16 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.17 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -300,7 +300,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
         </div>
       </div>
       <div class="card">
-        <div class="filters"><label style="margin:0">Dia do inventário</label><input type="date" id="inv-data" style="width:auto"><button class="btn sm sec" id="inv-hoje">Hoje</button></div>
+        <div class="filters"><label style="margin:0">Dia do inventário</label><input type="date" id="inv-data" style="width:auto"><button class="btn sm sec" id="inv-hoje">Hoje</button><button class="btn sm" id="inv-copiar" title="Traz para a tela o inventário de outro dia, para você ajustar e salvar">⧉ Copiar de outra data</button></div>
         <h3>Inventário do dia <span class="muted" id="inv-meta" style="font-weight:400"></span></h3>
         <div class="filters">
           <div style="position:relative"><input id="inv-busca" placeholder="Descrição, código ou cód. cliente…" autocomplete="off" style="width:230px"></div>
@@ -794,7 +794,7 @@ function ativarDragDrop(tb, fila){
         supa.from('pp_itens').update({ ordem_manual:k, ordem_manual_ativa:true, atualizado_por: usuarioAtual.ident, atualizado_em: agora }).eq('id', it.id)));
       const erro = resultados.find(r => r.error);
       if(erro){
-        toast(/ordem_manual_ativa/i.test(erro.error.message) ? 'Rode o SQL da V1.16 no Supabase para habilitar a ordem manual.' : 'Erro ao reordenar: ' + erro.error.message, 'err');
+        toast(/ordem_manual_ativa/i.test(erro.error.message) ? 'Rode o SQL da V1.17 no Supabase para habilitar a ordem manual.' : 'Erro ao reordenar: ' + erro.error.message, 'err');
         renderPlanejamento(); return;
       }
       await registrarLog('reordenar', movido, { posicao: iFrom + 1 }, {
@@ -1249,7 +1249,7 @@ async function registrarInspecao(id, n, amostragem){
   let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
     delete payload.amostragem;
-    toast('Rode o SQL da V1.16 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    toast('Rode o SQL da V1.17 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
     ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
   }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
@@ -1364,10 +1364,10 @@ async function excluirInventarioDoDia(D){
   const lotes = [...D.lotes];
   let r = await supa.from('pp_inventario').delete().in('lote', lotes).select('lote');
   let apagou = !r.error && (r.data || []).length > 0;
-  if(!apagou){   // sem permissão de excluir no banco (SQL V1.16 ainda não rodado): esconde o inventário em vez de apagar
+  if(!apagou){   // sem permissão de excluir no banco (SQL V1.17 ainda não rodado): esconde o inventário em vez de apagar
     r = await supa.from('pp_inventario').update({ ativo:false }).in('lote', lotes);
     if(r.error){ toast('Erro ao excluir inventário: ' + r.error.message, 'err'); return; }
-    toast('Inventário removido da lista. Rode o SQL da V1.16 para apagar de vez os registros do banco.', 'ok');
+    toast('Inventário removido da lista. Rode o SQL da V1.17 para apagar de vez os registros do banco.', 'ok');
   } else toast('Inventário excluído.', 'ok');
   await registrarLog('inventario_excluido', null, { dia:D.dia, itens:D.linhas.length, total:D.linhas.reduce((a,x)=>a+Number(x.quantidade),0) }, null);
   renderInventario();
@@ -1432,6 +1432,35 @@ function trocarDiaInventario(novoDia){
 $('inv-data').addEventListener('change', () => trocarDiaInventario($('inv-data').value || hojeISO()));
 $('inv-hoje').addEventListener('click', () => trocarDiaInventario(hojeISO()));
 ligarBuscaPorDescricao($('inv-busca'), pr => { $('inv-cod').value = pr.cod; $('inv-qtd').focus(); });
+async function copiarInventarioDeOutraData(){
+  const diaAtual = $('inv-data').value || hojeISO();
+  const r = await buscarTudo(() => supa.from('pp_inventario').select('data_ref,criado_em').eq('ativo', true).order('id'));
+  if(r.error){ toast('Erro ao carregar inventários: ' + r.error.message, 'err'); return; }
+  const dias = new Map();
+  r.data.forEach(l => { const d = l.data_ref || dataLocalISO(new Date(l.criado_em)); dias.set(d, (dias.get(d) || 0) + 1); });
+  dias.delete(diaAtual);
+  const lista = [...dias.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 60);
+  if(!lista.length){ toast('Não há inventário salvo em outra data para copiar.', 'err'); return; }
+  const btnOk = document.createElement('button'); btnOk.className = 'btn'; btnOk.textContent = 'Copiar para a tela';
+  const btnCancel = document.createElement('button'); btnCancel.className = 'btn sec'; btnCancel.textContent = 'Cancelar';
+  btnCancel.addEventListener('click', fecharModal);
+  btnOk.addEventListener('click', async () => {
+    const origem = $('f-origem').value, zerar = $('f-zerar').checked;
+    if(invTemAlteracao() && !confirm('Você tem alterações não salvas no inventário. Substituir pelo inventário copiado?')) return;
+    const c = await buscarTudo(() => supa.from('pp_inventario').select('codigo9,quantidade,data_ref,criado_em').eq('ativo', true).eq('data_ref', origem).order('id'));
+    if(c.error){ toast('Erro ao copiar: ' + c.error.message, 'err'); return; }
+    invRascunho = c.data.map(l => ({ codigo9: l.codigo9, quantidade: zerar ? 0 : Number(l.quantidade) }));
+    fecharModal();
+    desenharInventario(true);
+    toast(`Copiado de ${origem.split('-').reverse().join('/')} (${invRascunho.length} códigos). Ajuste e clique em "Salvar inventário" para valer em ${diaAtual.split('-').reverse().join('/')}.`, 'ok');
+  });
+  abrirModal('Copiar inventário de outra data',
+    `<p style="margin-bottom:10px;font-size:13px">O conteúdo vai para a tela como rascunho de <b>${diaAtual.split('-').reverse().join('/')}</b>. Você pode alterar quantidades, excluir e adicionar códigos antes de salvar.</p>
+     <div class="field"><label>Copiar do dia</label><select id="f-origem">${lista.map(([d, n]) => `<option value="${d}">${d.split('-').reverse().join('/')} — ${n} código(s)</option>`).join('')}</select></div>
+     <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:6px"><input type="checkbox" id="f-zerar"> Copiar com as quantidades zeradas</label>`,
+    [btnCancel, btnOk]);
+}
+$('inv-copiar').addEventListener('click', copiarInventarioDeOutraData);
 $('inv-add').addEventListener('click', adicionarLinhaInventario);
 $('inv-qtd').addEventListener('keydown', e => { if(e.key === 'Enter') adicionarLinhaInventario(); });
 $('inv-salvar').addEventListener('click', salvarInventario);
