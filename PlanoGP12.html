@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.12</title>
+<title>Programa de Inspeção V1.13</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -196,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.12</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.13</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.12 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.13 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -302,7 +302,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
         <div class="filters"><label style="margin:0">Dia do inventário</label><input type="date" id="inv-data" style="width:auto"><button class="btn sm sec" id="inv-hoje">Hoje</button></div>
         <h3>Inventário do dia <span class="muted" id="inv-meta" style="font-weight:400"></span></h3>
         <div class="filters">
-          <div style="position:relative"><input id="inv-busca" placeholder="Buscar por descrição…" autocomplete="off" style="width:200px"></div>
+          <div style="position:relative"><input id="inv-busca" placeholder="Descrição, código ou cód. cliente…" autocomplete="off" style="width:230px"></div>
           <input id="inv-cod" placeholder="Código" maxlength="9" style="width:140px">
           <input id="inv-qtd" type="number" min="0" placeholder="Quantidade" style="width:130px">
           <button class="btn sm" id="inv-add">+ Adicionar</button>
@@ -371,8 +371,10 @@ function buscarProdutos(termo, max){
   const palavras = normalizar(termo).split(/\s+/).filter(Boolean), out = [];
   if(!palavras.length) return out;
   for(const [cod, desc] of produtosMap){
-    const alvo = normalizar(cod + ' ' + desc);
-    if(palavras.every(w => alvo.includes(w))){ out.push({ cod, desc }); if(out.length >= (max || 30)) break; }
+    const cli = clienteMap.get(cod) || '';
+    const alvo = normalizar(cod + ' ' + desc + ' ' + cli);
+    const compacto = alvo.replace(/[^a-z0-9]/g, '');   // "123-45" também casa com "12345"
+    if(palavras.every(w => alvo.includes(w) || compacto.includes(w.replace(/[^a-z0-9]/g, '')))){ out.push({ cod, desc, cli }); if(out.length >= (max || 30)) break; }
   }
   return out;
 }
@@ -394,6 +396,7 @@ function ligarBuscaPorDescricao(input, aoEscolher){
       const c = document.createElement('span'); c.className = 'cod'; c.textContent = pr.cod;
       const t = document.createElement('span'); t.textContent = pr.desc || '';
       d.append(c, t);
+      if(pr.cli){ const k = document.createElement('span'); k.className = 'cod'; k.style.marginLeft = 'auto'; k.style.color = 'var(--muted)'; k.textContent = 'cli ' + pr.cli; d.append(k); }
       d.addEventListener('mousedown', e => { e.preventDefault(); aoEscolher(pr); input.value = ''; fechar(); });
       box.appendChild(d);
     });
@@ -430,16 +433,21 @@ function initFiltrosDia(){
 }
 /* Cadastro de produtos do Firewall (tabela "produtos": codigo = 7 dígitos, descricao) */
 let produtosMap = new Map();
+let clienteMap = new Map();   // codigo (7 dígitos) -> código do cliente (cod_cliente do Firewall)
 async function carregarProdutos(){
   try{
-    const mapa = new Map(); const TAM = 1000;
+    const mapa = new Map(), mapaCli = new Map(); const TAM = 1000; let colunas = 'codigo,descricao,cod_cliente';
     for(let de=0;;de+=TAM){
-      const { data, error } = await supa.from('produtos').select('codigo,descricao').order('codigo').range(de, de+TAM-1);
+      let { data, error } = await supa.from('produtos').select(colunas).order('codigo').range(de, de+TAM-1);
+      if(error && colunas.includes('cod_cliente')){   // se a coluna do cliente não existir, segue só com código e descrição
+        colunas = 'codigo,descricao';
+        ({ data, error } = await supa.from('produtos').select(colunas).order('codigo').range(de, de+TAM-1));
+      }
       if(error) throw error;
-      (data||[]).forEach(p => mapa.set(String(p.codigo).trim(), p.descricao));
+      (data||[]).forEach(p => { const c = String(p.codigo).trim(); mapa.set(c, p.descricao); if(p.cod_cliente) mapaCli.set(c, String(p.cod_cliente).trim()); });
       if(!data || data.length < TAM) break;
     }
-    produtosMap = mapa;
+    produtosMap = mapa; clienteMap = mapaCli;
     $('db-status').textContent = `Supabase: conectado · ${produtosMap.size} produtos`;
   }catch(e){
     $('db-status').textContent = 'Supabase: conectado · sem acesso ao cadastro de produtos';
@@ -764,7 +772,7 @@ $('pl-novo').addEventListener('click', () => abrirFormPeca(null));
 function abrirFormPeca(id){
   const item = id ? itensCache.find(i => i.id === id) : null;
   const corpo = `
-    <div class="field"><label>Buscar por descrição (opcional)</label><input id="f-busca" placeholder="ex.: coletor" autocomplete="off"></div>
+    <div class="field"><label>Buscar por descrição, código ou cód. cliente (opcional)</label><input id="f-busca" placeholder="ex.: coletor ou 11489" autocomplete="off"></div>
     <div class="field"><label>Código (9 dígitos)</label><input id="f-codigo" value="${item?.codigo9 || ''}" maxlength="9"></div>
     <div class="field"><label>Descrição (opcional)</label><input id="f-descricao" value="${item?.descricao || ''}"></div>
     <div class="row">
@@ -1193,7 +1201,7 @@ async function registrarInspecao(id, n, amostragem){
   let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
     delete payload.amostragem;
-    toast('Rode o SQL da V1.12 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    toast('Rode o SQL da V1.13 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
     ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
   }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
