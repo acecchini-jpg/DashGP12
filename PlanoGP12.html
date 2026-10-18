@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.15</title>
+<title>Programa de Inspeção V1.16</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -196,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.15</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.16</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.15 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.16 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -224,6 +224,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
         <div style="display:flex;gap:8px">
           <button class="btn sec" id="pl-importar">⇪ Importar planilha</button>
           <input type="file" id="pl-arquivo" accept=".xlsx,.xlsm,.xls" hidden>
+          <button class="btn sec" id="pl-auto" style="display:none" title="Descarta a ordem manual do dia e volta para prioridade e horário">↺ Reordenar automaticamente</button>
           <button class="btn" id="pl-novo">+ Nova peça</button>
         </div>
       </div>
@@ -683,17 +684,22 @@ function celulasQtd(item){
       <td class="num insp">${Number(item.qtd_inspecionada || 0)}${item.quantidade != null ? ' / ' + item.quantidade : ''}</td>`;
 }
 
+// Regra automática: prioritárias primeiro, depois por horário (sem horário por último, na ordem de cadastro)
+function cmpRegra(a, b){
+  if(!!a.prioridade !== !!b.prioridade) return a.prioridade ? -1 : 1;
+  const ha = a.horario ? new Date(a.horario).getTime() : null;
+  const hb = b.horario ? new Date(b.horario).getTime() : null;
+  if(ha && hb) return ha - hb;
+  if(ha && !hb) return -1;
+  if(!ha && hb) return 1;
+  return (a.ordem_manual||0) - (b.ordem_manual||0) || new Date(a.criado_em) - new Date(b.criado_em);
+}
+// Peças com ordem manual (arrastadas pela Logística) vêm primeiro, na sequência escolhida; as demais seguem a regra automática
 function ordenarFila(itens){
-  const agora = Date.now();
-  return [...itens].sort((a,b) => {
-    if(!!a.prioridade !== !!b.prioridade) return a.prioridade ? -1 : 1;
-    const ha = a.horario ? new Date(a.horario).getTime() : null;
-    const hb = b.horario ? new Date(b.horario).getTime() : null;
-    if(ha && hb) return ha - hb;
-    if(ha && !hb) return -1;
-    if(!ha && hb) return 1;
-    return (a.ordem_manual||0) - (b.ordem_manual||0) || new Date(a.criado_em) - new Date(b.criado_em);
-  });
+  const man = itens.filter(i => i.ordem_manual_ativa), aut = itens.filter(i => !i.ordem_manual_ativa);
+  man.sort((a, b) => dataDoItem(a).localeCompare(dataDoItem(b)) || (a.ordem_manual||0) - (b.ordem_manual||0));
+  aut.sort(cmpRegra);
+  return [...man, ...aut];
 }
 function classeLinha(item){
   if(item.status === 'finalizado') return '';
@@ -730,11 +736,12 @@ async function renderPlanejamento(){
   const tb = $('pl-tbody'); tb.innerHTML = '';
   renderFinalizados();
   const fila = ordenarFila(filtrarDia(itensCache.filter(i => i.status !== 'finalizado')));
+  $('pl-auto').style.display = 'none';
   if(fila.length === 0){ tb.innerHTML = '<tr><td colspan="10" class="empty">Nenhuma peça para este dia.</td></tr>'; return; }
   fila.forEach(item => {
     const tr = document.createElement('tr');
     tr.className = classeLinha(item);
-    tr.draggable = podeEditar && !item.horario;
+    tr.draggable = podeEditar && !!filtroData;   // reordenar só com um dia selecionado
     tr.dataset.id = item.id;
     tr.innerHTML = `
       <td class="drag-handle">${tr.draggable ? '⠿' : ''}</td>
@@ -753,10 +760,13 @@ async function renderPlanejamento(){
   if(podeEditar){
     tb.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => abrirFormPeca(b.dataset.edit)));
     tb.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => excluirPeca(b.dataset.del)));
-    ativarDragDrop(tb);
-  }
+    ativarDragDrop(tb, fila);
+    $('pl-auto').style.display = (filtroData && fila.some(i => i.ordem_manual_ativa)) ? '' : 'none';
+    $('pl-auto').onclick = () => reordenarAutomatico(fila);
+  } else $('pl-auto').style.display = 'none';
 }
-function ativarDragDrop(tb){
+function descreveItem(i){ return `${i.codigo9}${i.prioridade ? ' (prioritária)' : ''}${i.horario ? ' às ' + horaLocal(i.horario) : ' (sem horário)'}`; }
+function ativarDragDrop(tb, fila){
   let arrastando = null;
   tb.querySelectorAll('tr[draggable=true]').forEach(tr => {
     tr.addEventListener('dragstart', () => { arrastando = tr; tr.classList.add('dragging'); });
@@ -764,15 +774,46 @@ function ativarDragDrop(tb){
     tr.addEventListener('dragover', e => e.preventDefault());
     tr.addEventListener('drop', async () => {
       if(!arrastando || arrastando === tr) return;
-      const ids = [...tb.querySelectorAll('tr')].map(r => r.dataset.id);
+      const ids = fila.map(i => i.id);
       const iFrom = ids.indexOf(arrastando.dataset.id), iTo = ids.indexOf(tr.dataset.id);
-      ids.splice(iTo, 0, ids.splice(iFrom, 1)[0]);
-      for(let k=0;k<ids.length;k++){
-        await supa.from('pp_itens').update({ ordem_manual:k }).eq('id', ids[k]);
+      if(iFrom < 0 || iTo < 0) return;
+      const novaOrdem = [...fila]; const [movido] = novaOrdem.splice(iFrom, 1); novaOrdem.splice(iTo, 0, movido);
+      // a nova sequência quebra a regra (prioridade / horário)? compara a peça movida com todas as outras
+      const quebras = [];
+      novaOrdem.forEach((o, k) => {
+        if(o === movido) return;
+        const depois = k > iTo, c = depois ? cmpRegra(movido, o) : cmpRegra(o, movido);
+        if(c > 0) quebras.push(depois ? `${descreveItem(movido)} passa à frente de ${descreveItem(o)}` : `${descreveItem(movido)} fica atrás de ${descreveItem(o)}`);
+      });
+      if(quebras.length){
+        const txt = 'Esta ordem quebra a regra (prioridade e horário):\n\n• ' + quebras.slice(0, 4).join('\n• ') + (quebras.length > 4 ? `\n• … e mais ${quebras.length - 4}` : '') + '\n\nConfirmar mesmo assim? Fica registrado na Auditoria.';
+        if(!confirm(txt)) return;
       }
+      const agora = new Date().toISOString();
+      const resultados = await Promise.all(novaOrdem.map((it, k) =>
+        supa.from('pp_itens').update({ ordem_manual:k, ordem_manual_ativa:true, atualizado_por: usuarioAtual.ident, atualizado_em: agora }).eq('id', it.id)));
+      const erro = resultados.find(r => r.error);
+      if(erro){
+        toast(/ordem_manual_ativa/i.test(erro.error.message) ? 'Rode o SQL da V1.16 no Supabase para habilitar a ordem manual.' : 'Erro ao reordenar: ' + erro.error.message, 'err');
+        renderPlanejamento(); return;
+      }
+      await registrarLog('reordenar', movido, { posicao: iFrom + 1 }, {
+        posicao: iTo + 1, dia: filtroData, quebrou_regra: quebras.length > 0, quebras: quebras.slice(0, 4),
+        acima: iTo > 0 ? novaOrdem[iTo - 1].codigo9 : null, abaixo: iTo < novaOrdem.length - 1 ? novaOrdem[iTo + 1].codigo9 : null
+      });
+      toast(quebras.length ? 'Ordem alterada (fora da regra).' : 'Ordem alterada.', 'ok');
       renderPlanejamento();
     });
   });
+}
+async function reordenarAutomatico(fila){
+  if(!confirm('Descartar a ordem manual deste dia e voltar para prioridade e horário?')) return;
+  const ids = fila.filter(i => i.ordem_manual_ativa).map(i => i.id);
+  const r = await supa.from('pp_itens').update({ ordem_manual_ativa:false, atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() }).in('id', ids);
+  if(r.error){ toast('Erro ao reordenar: ' + r.error.message, 'err'); return; }
+  await registrarLog('reordenar_automatico', null, null, { dia: filtroData, itens: ids.length });
+  toast('Fila voltou para a ordem automática.', 'ok');
+  renderPlanejamento();
 }
 $('pl-novo').addEventListener('click', () => abrirFormPeca(null));
 
@@ -1208,7 +1249,7 @@ async function registrarInspecao(id, n, amostragem){
   let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
     delete payload.amostragem;
-    toast('Rode o SQL da V1.15 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    toast('Rode o SQL da V1.16 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
     ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
   }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
@@ -1323,10 +1364,10 @@ async function excluirInventarioDoDia(D){
   const lotes = [...D.lotes];
   let r = await supa.from('pp_inventario').delete().in('lote', lotes).select('lote');
   let apagou = !r.error && (r.data || []).length > 0;
-  if(!apagou){   // sem permissão de excluir no banco (SQL V1.15 ainda não rodado): esconde o inventário em vez de apagar
+  if(!apagou){   // sem permissão de excluir no banco (SQL V1.16 ainda não rodado): esconde o inventário em vez de apagar
     r = await supa.from('pp_inventario').update({ ativo:false }).in('lote', lotes);
     if(r.error){ toast('Erro ao excluir inventário: ' + r.error.message, 'err'); return; }
-    toast('Inventário removido da lista. Rode o SQL da V1.15 para apagar de vez os registros do banco.', 'ok');
+    toast('Inventário removido da lista. Rode o SQL da V1.16 para apagar de vez os registros do banco.', 'ok');
   } else toast('Inventário excluído.', 'ok');
   await registrarLog('inventario_excluido', null, { dia:D.dia, itens:D.linhas.length, total:D.linhas.reduce((a,x)=>a+Number(x.quantidade),0) }, null);
   renderInventario();
