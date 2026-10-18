@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.17</title>
+<title>Programa de Inspeção V1.18</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -196,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.17</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.18</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.17 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.18 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -794,7 +794,7 @@ function ativarDragDrop(tb, fila){
         supa.from('pp_itens').update({ ordem_manual:k, ordem_manual_ativa:true, atualizado_por: usuarioAtual.ident, atualizado_em: agora }).eq('id', it.id)));
       const erro = resultados.find(r => r.error);
       if(erro){
-        toast(/ordem_manual_ativa/i.test(erro.error.message) ? 'Rode o SQL da V1.17 no Supabase para habilitar a ordem manual.' : 'Erro ao reordenar: ' + erro.error.message, 'err');
+        toast(/ordem_manual_ativa/i.test(erro.error.message) ? 'Rode o arquivo Programa_Inspecao_V1.16_update.sql no Supabase para habilitar a ordem manual.' : 'Erro ao reordenar: ' + erro.error.message, 'err');
         renderPlanejamento(); return;
       }
       await registrarLog('reordenar', movido, { posicao: iFrom + 1 }, {
@@ -1249,7 +1249,7 @@ async function registrarInspecao(id, n, amostragem){
   let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
     delete payload.amostragem;
-    toast('Rode o SQL da V1.17 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    toast('Rode o arquivo Programa_Inspecao_V1.12_update.sql no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
     ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
   }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
@@ -1364,10 +1364,10 @@ async function excluirInventarioDoDia(D){
   const lotes = [...D.lotes];
   let r = await supa.from('pp_inventario').delete().in('lote', lotes).select('lote');
   let apagou = !r.error && (r.data || []).length > 0;
-  if(!apagou){   // sem permissão de excluir no banco (SQL V1.17 ainda não rodado): esconde o inventário em vez de apagar
+  if(!apagou){   // sem permissão de excluir no banco (SQL V1.14 ainda não rodado): esconde o inventário em vez de apagar
     r = await supa.from('pp_inventario').update({ ativo:false }).in('lote', lotes);
     if(r.error){ toast('Erro ao excluir inventário: ' + r.error.message, 'err'); return; }
-    toast('Inventário removido da lista. Rode o SQL da V1.17 para apagar de vez os registros do banco.', 'ok');
+    toast('Inventário removido da lista. Rode o arquivo Programa_Inspecao_V1.14_update.sql para apagar de vez os registros do banco.', 'ok');
   } else toast('Inventário excluído.', 'ok');
   await registrarLog('inventario_excluido', null, { dia:D.dia, itens:D.linhas.length, total:D.linhas.reduce((a,x)=>a+Number(x.quantidade),0) }, null);
   renderInventario();
