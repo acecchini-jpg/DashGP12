@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.13</title>
+<title>Programa de Inspeção V1.15</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -196,13 +196,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.13</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.15</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.13 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.15 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -317,9 +317,9 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
         <p class="muted" id="inv-aviso" style="font-size:12px;margin-top:8px"></p>
       </div>
       <div class="card">
-        <h3>Histórico</h3>
+        <h3>Inventários salvos <span class="muted" style="font-weight:400;font-size:12px">(um por dia — salvar de novo substitui)</span></h3>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>Dia</th><th>Lançado em</th><th>Por</th><th class="num">Códigos</th><th class="num">Total</th><th></th></tr></thead>
+          <thead><tr><th>Dia</th><th>Lançado em</th><th>Por</th><th class="num">Códigos</th><th class="num">Total</th><th></th><th></th></tr></thead>
           <tbody id="inv-hist"></tbody>
         </table></div>
       </div>
@@ -562,6 +562,7 @@ async function authAposLogin(user, registrar, ident){
   await iniciarAppPosLogin();
 }
 async function authSair(){
+  if(typeof invTemAlteracao === 'function' && invTemAlteracao() && !confirm('Você tem alterações não salvas no inventário. Sair e descartar?')) return;
   try{ if(usuarioAtual) await registrarLog('logout', null, null, null); }catch(e){}
   try{ await supa.auth.signOut(); }catch(e){}
   usuarioAtual = null; nivelUsuario = null;
@@ -587,6 +588,12 @@ function montarNav(){
   showPage(permitidas[0]);
 }
 function showPage(id){
+  const paginaAtual = document.querySelector('.nav-item.active')?.dataset.page;
+  if(paginaAtual === 'inventario' && invTemAlteracao()){
+    if(id === 'inventario') return;   // atualização automática (ou clique na mesma aba): não apaga o que foi digitado
+    if(!confirm('Você tem alterações não salvas no inventário. Sair e descartar?')) return;
+    invOriginal = JSON.stringify(invRascunho);   // aceitou descartar
+  }
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === id));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
   if(id === 'planejamento')   renderPlanejamento();
@@ -1201,7 +1208,7 @@ async function registrarInspecao(id, n, amostragem){
   let { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error && 'amostragem' in payload && /amostragem/i.test(error.message)){   // coluna ainda não criada no banco
     delete payload.amostragem;
-    toast('Rode o SQL da V1.13 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
+    toast('Rode o SQL da V1.15 no Supabase para gravar a amostragem na peça (ela foi registrada só na Auditoria).', 'err');
     ({ error } = await supa.from('pp_itens').update(payload).eq('id', id));
   }
   if(error){ toast('Erro ao registrar inspeção: ' + error.message, 'err'); return; }
@@ -1273,35 +1280,56 @@ $('rt-atualizar').addEventListener('click', renderRetrabalho);
 /* ---------- INVENTÁRIO ---------- */
 let invRascunho = [];     // [{codigo9, quantidade}] — cópia de trabalho
 let invOriginal = '';     // snapshot para detectar alterações não salvas
+let invCarregado = false, invDiaCarregado = '';
+function invTemAlteracao(){ return invCarregado && JSON.stringify(invRascunho) !== invOriginal; }
+window.addEventListener('beforeunload', e => { if(invTemAlteracao()){ e.preventDefault(); e.returnValue = ''; } });
 async function renderInventario(){
   const podeEditar = PAPEIS[nivelUsuario].editar.inventario;
   const dia = $('inv-data').value || hojeISO();
   const ativo = await buscarTudo(() => supa.from('pp_inventario').select('*').eq('ativo', true).eq('data_ref', dia).order('id'));
   if(ativo.error){ toast('Erro ao carregar inventário: ' + ativo.error.message, 'err'); return; }
   invRascunho = ativo.data.map(l => ({ codigo9:l.codigo9, quantidade:Number(l.quantidade) }));
-  invOriginal = JSON.stringify(invRascunho);
+  invOriginal = JSON.stringify(invRascunho); invCarregado = true; invDiaCarregado = dia;
   const meta = ativo.data[0];
   $('inv-meta').textContent = meta ? `— lançado em ${fmtDT(meta.criado_em)} por ${meta.criado_por}` : '— nenhum inventário lançado para este dia';
   document.querySelectorAll('#page-inventario .filters button, #page-inventario .filters input').forEach(e => e.disabled = !podeEditar);
   desenharInventario(podeEditar);
-  // histórico: últimos lotes inativos
-  const h = await supa.from('pp_inventario').select('lote,codigo9,quantidade,criado_em,criado_por,data_ref').eq('ativo', false).order('criado_em', { ascending:false }).limit(500);
+  // inventários salvos: um por dia (o ativo de cada dia)
+  const h = await buscarTudo(() => supa.from('pp_inventario').select('lote,codigo9,quantidade,criado_em,criado_por,data_ref').eq('ativo', true).order('id'));
   const tb = $('inv-hist'); tb.innerHTML = '';
-  const lotes = new Map();
+  const dias = new Map();
   (h.data || []).forEach(l => {
-    if(!lotes.has(l.lote)) lotes.set(l.lote, { lote:l.lote, quando:l.criado_em, por:l.criado_por, dia:l.data_ref, linhas:[] });
-    lotes.get(l.lote).linhas.push(l);
+    const d = l.data_ref || dataLocalISO(new Date(l.criado_em));
+    if(!dias.has(d)) dias.set(d, { dia:d, lotes:new Set(), quando:l.criado_em, por:l.criado_por, linhas:[] });
+    const D = dias.get(d); D.lotes.add(l.lote); D.linhas.push(l);
+    if(new Date(l.criado_em) > new Date(D.quando)){ D.quando = l.criado_em; D.por = l.criado_por; }
   });
-  if(lotes.size === 0){ tb.innerHTML = '<tr><td colspan="6" class="empty">Sem histórico ainda.</td></tr>'; return; }
-  [...lotes.values()].slice(0, 30).forEach(L => {
+  if(dias.size === 0){ tb.innerHTML = '<tr><td colspan="7" class="empty">Nenhum inventário salvo ainda.</td></tr>'; return; }
+  [...dias.values()].sort((x, y) => y.dia.localeCompare(x.dia)).slice(0, 60).forEach(D => {
+    const fmtD = D.dia.split('-').reverse().join('/');
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${L.dia ? L.dia.split('-').reverse().join('/') : '—'}</td><td>${fmtDT(L.quando)}</td><td>${L.por}</td><td class="num">${L.linhas.length}</td><td class="num">${L.linhas.reduce((a,x)=>a+Number(x.quantidade),0)}</td><td><button class="btn sm sec">Ver</button></td>`;
-    tr.querySelector('button').addEventListener('click', () => {
+    tr.innerHTML = `<td>${fmtD}</td><td>${fmtDT(D.quando)}</td><td>${D.por}</td><td class="num">${D.linhas.length}</td><td class="num">${D.linhas.reduce((a,x)=>a+Number(x.quantidade),0)}</td><td><button class="btn sm sec" data-v>Ver</button></td><td>${podeEditar ? '<button class="btn sm danger" data-x>Excluir</button>' : ''}</td>`;
+    tr.querySelector('[data-v]').addEventListener('click', () => {
       const btn = document.createElement('button'); btn.className='btn sec'; btn.textContent='Fechar'; btn.addEventListener('click', fecharModal);
-      abrirModal(`Inventário de ${fmtDT(L.quando)}`, `<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Qtd</th></tr></thead><tbody>${L.linhas.map(x=>`<tr><td class="mono">${x.codigo9}</td><td class="num">${x.quantidade}</td></tr>`).join('')}</tbody></table></div>`, [btn]);
+      abrirModal(`Inventário de ${fmtD}`, `<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Qtd</th></tr></thead><tbody>${D.linhas.map(x=>`<tr><td class="mono">${x.codigo9}</td><td class="num">${x.quantidade}</td></tr>`).join('')}</tbody></table></div>`, [btn]);
     });
+    if(podeEditar) tr.querySelector('[data-x]').addEventListener('click', () => excluirInventarioDoDia(D));
     tb.appendChild(tr);
   });
+}
+async function excluirInventarioDoDia(D){
+  const fmtD = D.dia.split('-').reverse().join('/');
+  if(!confirm(`Excluir o inventário de ${fmtD} (${D.linhas.length} códigos)? As bolinhas das peças desse dia ficam vermelhas.`)) return;
+  const lotes = [...D.lotes];
+  let r = await supa.from('pp_inventario').delete().in('lote', lotes).select('lote');
+  let apagou = !r.error && (r.data || []).length > 0;
+  if(!apagou){   // sem permissão de excluir no banco (SQL V1.15 ainda não rodado): esconde o inventário em vez de apagar
+    r = await supa.from('pp_inventario').update({ ativo:false }).in('lote', lotes);
+    if(r.error){ toast('Erro ao excluir inventário: ' + r.error.message, 'err'); return; }
+    toast('Inventário removido da lista. Rode o SQL da V1.15 para apagar de vez os registros do banco.', 'ok');
+  } else toast('Inventário excluído.', 'ok');
+  await registrarLog('inventario_excluido', null, { dia:D.dia, itens:D.linhas.length, total:D.linhas.reduce((a,x)=>a+Number(x.quantidade),0) }, null);
+  renderInventario();
 }
 function desenharInventario(podeEditar){
   const tb = $('inv-tbody'); tb.innerHTML = '';
@@ -1336,7 +1364,7 @@ function adicionarLinhaInventario(){
 async function salvarInventario(){
   if(invRascunho.length === 0){ toast('Inventário vazio — adicione ao menos um código.', 'err'); return; }
   const dia = $('inv-data').value || hojeISO();
-  if(!confirm(`Salvar este inventário para ${dia.split('-').reverse().join('/')}? Ele substitui o inventário desse dia (o anterior vai para o histórico).`)) return;
+  if(!confirm(`Salvar este inventário para ${dia.split('-').reverse().join('/')}? Ele substitui o inventário desse dia: códigos novos entram, os removidos saem e as quantidades alteradas são atualizadas.`)) return;
   const lote = (crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
   const linhas = invRascunho.map(l => ({ lote, codigo9:l.codigo9, codigo7:codigo7(l.codigo9), quantidade:l.quantidade, data_ref:dia, ativo:false, criado_por:usuarioAtual.ident }));
   // 1) grava o novo (inativo)  2) desativa o antigo  3) ativa o novo — se algo falhar no meio, nenhum dado se perde
@@ -1348,12 +1376,20 @@ async function salvarInventario(){
   if(r.error){ toast('Erro ao arquivar o inventário anterior: ' + r.error.message, 'err'); return; }
   r = await supa.from('pp_inventario').update({ ativo:true }).eq('lote', lote);
   if(r.error){ toast('Erro ao ativar o novo inventário: ' + r.error.message, 'err'); return; }
-  await registrarLog('inventario_salvo', null, null, { dia, itens: linhas.length, total: linhas.reduce((a,x)=>a+x.quantidade,0) });
+  // só 1 inventário por dia: apaga o(s) anterior(es) desse dia (se o banco não permitir apagar, eles ficam inativos e escondidos)
+  await supa.from('pp_inventario').delete().eq('data_ref', dia).eq('ativo', false);
+  await registrarLog('inventario_salvo', null, null, { dia, itens: linhas.length, total: linhas.reduce((a,x)=>a+x.quantidade,0), substituiu: true });
   toast('Inventário salvo.', 'ok');
   renderInventario();
 }
-$('inv-data').addEventListener('change', renderInventario);
-$('inv-hoje').addEventListener('click', () => { $('inv-data').value = hojeISO(); renderInventario(); });
+function trocarDiaInventario(novoDia){
+  if(invTemAlteracao() && !confirm('Você tem alterações não salvas no inventário. Trocar de dia e descartar?')){ $('inv-data').value = invDiaCarregado; return; }
+  $('inv-data').value = novoDia;
+  invOriginal = JSON.stringify(invRascunho);   // descartado
+  renderInventario();
+}
+$('inv-data').addEventListener('change', () => trocarDiaInventario($('inv-data').value || hojeISO()));
+$('inv-hoje').addEventListener('click', () => trocarDiaInventario(hojeISO()));
 ligarBuscaPorDescricao($('inv-busca'), pr => { $('inv-cod').value = pr.cod; $('inv-qtd').focus(); });
 $('inv-add').addEventListener('click', adicionarLinhaInventario);
 $('inv-qtd').addEventListener('keydown', e => { if(e.key === 'Enter') adicionarLinhaInventario(); });
