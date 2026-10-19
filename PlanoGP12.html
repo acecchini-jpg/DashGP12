@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.18</title>
+<title>Programa de Inspeção V1.19</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,6 +63,7 @@ input[type=checkbox]{width:auto}
 .btn.warn{background:var(--warn);border-color:var(--warn)}
 .btn.sm{padding:4px 10px;font-size:12px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.cinza,.btn.cinza:disabled{background:#E6E9EE;color:#98A1B0;border-color:#E6E9EE;opacity:1;cursor:default;box-shadow:none}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--line);padding:7px 8px;background:#FAFBFC;position:sticky;top:0}
 td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -196,13 +197,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.18</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.19</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.18 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.19 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -1102,7 +1103,7 @@ async function renderAcompanhamento(){
       <td style="white-space:nowrap">
         ${podeEditar && item.status === 'aguardando_retrabalho' ? '<span class="muted" style="font-size:12px">aguardando a Produção</span>' : ''}
         ${podeEditar && item.status !== 'aguardando_retrabalho' ? `
-          ${item.status==='pendente' ? `<button class="btn sm sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
+          ${item.status==='pendente' ? `<button class="btn sm sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : `<button class="btn sm cinza" disabled title="Inspeção já iniciada">Iniciar</button>`}
           <button class="btn sm ok2" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
           <button class="btn sm warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
         ` : ''}
@@ -1145,7 +1146,7 @@ function montarCartao(item, podeEditar){
     ${item.observacao ? `<div class="pc-obs">${item.observacao}</div>` : ''}
     ${podeEditar ? (retr ? '<div class="pc-aguarda">Aguardando a Produção</div>' : `<div class="pc-btns">
       <button class="btn ok2 fin" data-ac="finalizado" data-id="${item.id}">Finalizar</button>
-      ${item.status==='pendente' ? `<button class="btn sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : ''}
+      ${item.status==='pendente' ? `<button class="btn sec" data-ac="em_inspecao" data-id="${item.id}">Iniciar</button>` : `<button class="btn cinza" disabled title="Inspeção já iniciada">Iniciar</button>`}
       <button class="btn warn" data-ac="aguardando_retrabalho" data-id="${item.id}">Retrabalho</button>
     </div>`) : ''}`;
   if(!podeEditar || retr) return el;
