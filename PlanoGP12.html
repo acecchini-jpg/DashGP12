@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.19</title>
+<title>Programa de Inspeção V1.20</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,6 +63,7 @@ input[type=checkbox]{width:auto}
 .btn.warn{background:var(--warn);border-color:var(--warn)}
 .btn.sm{padding:4px 10px;font-size:12px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+th.ordenavel{cursor:pointer;user-select:none}th.ordenavel:hover{color:var(--text,#1B2230)}th.ordenavel .seta{margin-left:4px;font-size:10px}
 .btn.cinza,.btn.cinza:disabled{background:#E6E9EE;color:#98A1B0;border-color:#E6E9EE;opacity:1;cursor:default;box-shadow:none}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--line);padding:7px 8px;background:#FAFBFC;position:sticky;top:0}
@@ -197,13 +198,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.19</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.20</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.19 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.20 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -313,7 +314,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
           <button class="btn ok2" id="inv-salvar">Salvar inventário</button>
         </div>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>Código</th><th>Descrição</th><th class="num">Quantidade</th><th></th></tr></thead>
+          <thead><tr><th class="ordenavel" data-invord="codigo9" title="Clique para ordenar">Código<span class="seta"></span></th><th class="ordenavel" data-invord="desc" title="Clique para ordenar">Descrição<span class="seta"></span></th><th class="num ordenavel" data-invord="qtd" title="Clique para ordenar">Quantidade<span class="seta"></span></th><th></th></tr></thead>
           <tbody id="inv-tbody"></tbody>
         </table></div>
         <p class="muted" id="inv-aviso" style="font-size:12px;margin-top:8px"></p>
@@ -1373,10 +1374,25 @@ async function excluirInventarioDoDia(D){
   await registrarLog('inventario_excluido', null, { dia:D.dia, itens:D.linhas.length, total:D.linhas.reduce((a,x)=>a+Number(x.quantidade),0) }, null);
   renderInventario();
 }
+let invOrd = { col:'codigo9', dir:1 };   // só visual: não altera invRascunho nem conta como alteração
+document.addEventListener('click', e => {
+  const th = e.target.closest && e.target.closest('th[data-invord]'); if(!th) return;
+  const col = th.dataset.invord;
+  invOrd = invOrd.col === col ? { col, dir:-invOrd.dir } : { col, dir:1 };
+  desenharInventario(PAPEIS[nivelUsuario].editar.inventario);
+});
 function desenharInventario(podeEditar){
   const tb = $('inv-tbody'); tb.innerHTML = '';
   if(invRascunho.length === 0){ tb.innerHTML = '<tr><td colspan="4" class="empty">Inventário vazio. Adicione códigos acima.</td></tr>'; }
-  invRascunho.forEach((l, idx) => {
+  document.querySelectorAll('th[data-invord]').forEach(th => { th.querySelector('.seta').textContent = th.dataset.invord === invOrd.col ? (invOrd.dir === 1 ? '▲' : '▼') : ''; });
+  const _val = l => invOrd.col === 'qtd' ? l.quantidade : invOrd.col === 'desc' ? (produtosMap.get(codigo7(l.codigo9)) || '') : l.codigo9;
+  const _ordem = invRascunho.map((l, i) => i).sort((a, b) => {
+    const x = _val(invRascunho[a]), y = _val(invRascunho[b]);
+    const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pt', { numeric:true });
+    return (c || a - b) * invOrd.dir;
+  });
+  _ordem.forEach(idx => {
+    const l = invRascunho[idx];
     const tr = document.createElement('tr'); tr.className = 'inv-linha';
     const d = produtosMap.get(codigo7(l.codigo9));
     tr.innerHTML = `<td class="mono">${l.codigo9}</td><td>${d || '<span class="muted">—</span>'}</td>
