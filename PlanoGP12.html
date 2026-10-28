@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.21</title>
+<title>Programa de Inspeção V1.24</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -204,13 +204,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.21</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.24</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.21 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.24 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -268,7 +268,8 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
         <button class="btn sec" id="ac-atualizar">↻ Atualizar</button>
       </div>
       <div class="card">
-        <div class="filters"><label style="margin:0">Dia</label><input type="date" class="flt-data" style="width:auto"><button class="btn sm sec flt-hoje">Hoje</button><button class="btn sm sec flt-todos">Todos os dias</button></div>
+        <div class="filters" id="ac-filtro"><label style="margin:0">Dia</label><input type="date" class="flt-data" style="width:auto"><button class="btn sm sec flt-hoje">Hoje</button><button class="btn sm sec flt-todos">Todos os dias</button></div>
+        <div class="filters" id="ac-data-fixa" style="display:none"><label style="margin:0">Data</label><input type="text" id="ac-data-fixa-val" readonly tabindex="-1" style="width:120px;background:#F3F5F8;cursor:default"></div>
         <div class="totais" id="ac-totais"></div>
         <div class="legenda">
           <span><i style="background:var(--danger)"></i>Atrasado</span>
@@ -288,7 +289,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
       <div class="page-head">
         <div>
           <h2>Aguardando Retrabalho</h2>
-          <p>Peças que o GP12 apontou como pendentes de retrabalho. Ao concluir, a peça volta para a fila de inspeção.</p>
+          <p>Peças que o GP12 apontou como pendentes de retrabalho. Ao concluir, a peça volta para a fila de inspeção (se for de um dia anterior, entra em hoje como prioritária, com o horário limpo).</p>
         </div>
         <button class="btn sec" id="rt-atualizar">↻ Atualizar</button>
       </div>
@@ -762,17 +763,66 @@ async function renderPlanejamento(){
       <td>${chipStatus(item.status)}</td>
       <td style="white-space:pre-line">${item.observacao || ''}</td>
       <td style="white-space:nowrap">
+        ${podeEditar && podeMoverParaHoje(item) ? `<button class="btn sm" data-hoje="${item.id}" title="Cria uma cópia desta peça para hoje (a original fica na data antiga)">Mover para Hoje</button> ` : ''}
         ${podeEditar ? `<button class="btn sm sec" data-edit="${item.id}">Editar</button> <button class="btn sm danger" data-del="${item.id}">Excluir</button>` : ''}
       </td>`;
     tb.appendChild(tr);
   });
   if(podeEditar){
+    tb.querySelectorAll('[data-hoje]').forEach(b => b.addEventListener('click', () => moverParaHoje(b.dataset.hoje)));
     tb.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => abrirFormPeca(b.dataset.edit)));
     tb.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => excluirPeca(b.dataset.del)));
     ativarDragDrop(tb, fila);
     $('pl-auto').style.display = (filtroData && fila.some(i => i.ordem_manual_ativa)) ? '' : 'none';
     $('pl-auto').onclick = () => reordenarAutomatico(fila);
   } else $('pl-auto').style.display = 'none';
+}
+/* Mover para Hoje (Logística/Admin): peça de data anterior, ainda não finalizada → cria CÓPIA em hoje; a original não é alterada */
+function podeMoverParaHoje(item){
+  return (item.status === 'pendente' || item.status === 'em_inspecao') && dataDoItem(item) < hojeISO();
+}
+function moverParaHoje(id){
+  const item = itensCache.find(i => i.id === id); if(!item) return;
+  const hoje = hojeISO(), fmt = d => d.split('-').reverse().join('/');
+  const total = item.quantidade != null ? Number(item.quantidade) : null;
+  const insp = Number(item.qtd_inspecionada || 0);
+  const saldo = total != null ? Math.max(total - insp, 0) : null;
+  const jaHoje = itensCache.filter(i => i.codigo9 === item.codigo9 && i.status !== 'finalizado' && dataDoItem(i) === hoje);
+  const corpo = `
+    <p style="margin-bottom:10px"><b>${item.codigo9}</b> — ${descItem(item)}<br><span class="muted">Original em ${fmt(dataDoItem(item))}: total ${total ?? '—'} · já inspecionado ${insp} · saldo ${saldo ?? '—'}</span></p>
+    <div class="field"><label>Qual quantidade vai para hoje (${fmt(hoje)})?</label>
+      <label style="font-weight:400"><input type="radio" name="mh-q" value="saldo" ${saldo != null ? 'checked' : 'disabled'} style="width:auto;margin-right:6px">Saldo a inspecionar: <b>${saldo ?? '—'}</b></label><br>
+      <label style="font-weight:400"><input type="radio" name="mh-q" value="total" ${saldo == null ? 'checked' : ''} ${total == null ? 'disabled' : ''} style="width:auto;margin-right:6px">Quantidade total: <b>${total ?? '—'}</b></label><br>
+      <label style="font-weight:400"><input type="radio" name="mh-q" value="outro" style="width:auto;margin-right:6px">Outro valor: <input id="mh-outro" type="number" min="1" style="width:110px"></label>
+    </div>
+    <div class="field"><label>Horário previsto hoje (opcional)</label><input id="mh-hora" type="time" style="width:140px"></div>
+    ${jaHoje.length ? `<p style="color:var(--warn);font-size:12.5px">⚠ Já existe(m) ${jaHoje.length} peça(s) com este código em hoje (qtd ${jaHoje.map(i => i.quantidade ?? '—').join(', ')}). Confira para não duplicar.</p>` : ''}
+    <p class="muted" style="font-size:12px">A peça original continua na data ${fmt(dataDoItem(item))} sem alteração; é criada uma cópia nova em hoje, como pendente.</p>`;
+  const bOk = document.createElement('button'); bOk.className = 'btn'; bOk.textContent = 'Mover para Hoje';
+  const bCancel = document.createElement('button'); bCancel.className = 'btn sec'; bCancel.textContent = 'Cancelar';
+  bCancel.addEventListener('click', fecharModal);
+  bOk.addEventListener('click', async () => {
+    const tipo = document.querySelector('input[name="mh-q"]:checked')?.value;
+    const qtd = tipo === 'saldo' ? saldo : tipo === 'total' ? total : Number($('mh-outro').value);
+    if(!tipo || !Number.isFinite(qtd) || qtd <= 0){ toast('Informe uma quantidade maior que zero.', 'err'); return; }
+    const hora = $('mh-hora').value;
+    bOk.disabled = true;
+    const obs = `Movido de ${fmt(dataDoItem(item))} (${tipo === 'saldo' ? 'saldo' : tipo === 'total' ? 'quantidade total' : 'valor informado'}: ${qtd})` + (item.observacao ? '\n' + item.observacao : '');
+    const payload = {
+      codigo9: item.codigo9, codigo7: item.codigo7 || codigo7(item.codigo9), descricao: item.descricao || null,
+      quantidade: qtd, data_prevista: hoje,
+      horario: hora ? new Date(hoje + 'T' + hora).toISOString() : null,
+      prioridade: !!item.prioridade, observacao: obs, status: 'pendente',
+      criado_por: usuarioAtual.ident, atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString(),
+      ordem_manual: itensCache.reduce((m, i) => Math.max(m, i.ordem_manual || 0), 0) + 1
+    };
+    const { data, error } = await supa.from('pp_itens').insert(payload).select().single();
+    if(error){ bOk.disabled = false; toast('Erro ao mover: ' + error.message, 'err'); return; }
+    await registrarLog('mover_para_hoje', data, { origem_id: item.id, data_origem: dataDoItem(item), quantidade_origem: total, inspecionado_origem: insp, status_origem: item.status }, { data_nova: hoje, quantidade: qtd, tipo });
+    fecharModal(); toast(`Cópia criada em hoje com ${qtd} peça(s).`, 'ok');
+    renderPlanejamento();
+  });
+  abrirModal('Mover para Hoje', corpo, [bCancel, bOk]);
 }
 function descreveItem(i){ return `${i.codigo9}${i.prioridade ? ' (prioritária)' : ''}${i.horario ? ' às ' + horaLocal(i.horario) : ' (sem horário)'}`; }
 function ativarDragDrop(tb, fila){
@@ -1091,6 +1141,11 @@ function ligarDropPlanilha(){
 
 /* ---------- ACOMPANHAMENTO (GP12) ---------- */
 async function renderAcompanhamento(){
+  // GP12 (nível 2) e Produção (nível 4): plano travado no dia de hoje, sem seletor (Admin e Logística seguem com o filtro normal)
+  const travado = nivelUsuario === 2 || nivelUsuario === 4;
+  $('ac-filtro').style.display = travado ? 'none' : '';
+  $('ac-data-fixa').style.display = travado ? '' : 'none';
+  if(travado){ filtroData = hojeISO(); $('ac-data-fixa-val').value = filtroData.split('-').reverse().join('/'); document.querySelectorAll('.flt-data').forEach(e => e.value = filtroData); }
   await carregarItens();
   const podeEditar = PAPEIS[nivelUsuario].editar.acompanhamento;
   const tb = $('ac-tbody'); tb.innerHTML = '';
@@ -1098,7 +1153,7 @@ async function renderAcompanhamento(){
   const doDia = filtrarDia(itensCache);   // totais: dia filtrado, todos os status (inclui retrabalho e finalizados)
   const totPlan = doDia.reduce((a, i) => a + Number(i.quantidade || 0), 0);
   const totInsp = doDia.reduce((a, i) => a + Number(i.qtd_inspecionada || 0), 0);
-  const totSaldo = doDia.reduce((a, i) => a + (faltaInspecionar(i) || 0), 0);
+  const totSaldo = doDia.reduce((a, i) => a + (i.status === 'finalizado' ? 0 : (faltaInspecionar(i) || 0)), 0);
   const fmtN = n => n.toLocaleString('pt-BR');
   $('ac-totais').innerHTML = `<div class="tot"><small>Planejado</small><b>${fmtN(totPlan)}</b></div><div class="tot ok"><small>Inspecionado</small><b>${fmtN(totInsp)}</b></div><div class="tot"><small>Saldo a inspecionar</small><b>${fmtN(totSaldo)}</b></div>`;
   const fila = ordenarFila(filtrarDia(itensCache.filter(i => i.status !== 'finalizado')));
@@ -1324,6 +1379,32 @@ async function renderRetrabalho(){
 }
 async function finalizarRetrabalho(id){
   const item = itensCache.find(i => i.id === id);
+  const hoje = hojeISO(), origem = dataDoItem(item);
+  if(origem < hoje){
+    // Retrabalho de dia anterior: a original fica no dia antigo (fechada) e uma CÓPIA prioritária, sem horário, entra em hoje
+    const fmt = d => d.split('-').reverse().join('/');
+    const total = item.quantidade != null ? Number(item.quantidade) : null;
+    const saldo = total != null ? Math.max(total - Number(item.qtd_inspecionada || 0), 0) : null;
+    const agora = new Date().toISOString();
+    const copia = {
+      codigo9: item.codigo9, codigo7: item.codigo7 || codigo7(item.codigo9), descricao: item.descricao || null,
+      quantidade: total == null ? null : (saldo > 0 ? saldo : total),
+      data_prevista: hoje, horario: null, prioridade: true,
+      observacao: `Item de ${fmt(origem)}` + (item.observacao ? '\n' + item.observacao : ''),
+      status: 'pendente', criado_por: usuarioAtual.ident, atualizado_por: usuarioAtual.ident, atualizado_em: agora,
+      ordem_manual: itensCache.reduce((m, i) => Math.max(m, i.ordem_manual || 0), 0) + 1
+    };
+    const ins = await supa.from('pp_itens').insert(copia).select().single();
+    if(ins.error){ toast('Erro ao criar a peça de hoje: ' + ins.error.message, 'err'); return; }
+    const carimbo = `[Retrabalho finalizado ${fmtDT(agora)} · ${usuarioAtual.ident}] continua em ${fmt(hoje)}`;
+    const up = await supa.from('pp_itens').update({ status:'finalizado', observacao: item.observacao ? item.observacao + '\n' + carimbo : carimbo, atualizado_por: usuarioAtual.ident, atualizado_em: agora }).eq('id', id);
+    if(up.error){ toast('A cópia de hoje foi criada, mas a original não foi encerrada: ' + up.error.message, 'err'); return; }
+    await registrarLog('retrabalho_finalizado', item, { status:'aguardando_retrabalho', data: origem }, { status:'finalizado', copia_id: ins.data.id, nova_data: hoje });
+    await registrarLog('retrabalho_para_hoje', ins.data, { origem_id: id, data_origem: origem, quantidade_origem: total }, { data_nova: hoje, quantidade: copia.quantidade, prioridade: true });
+    toast(`Retrabalho finalizado: peça entrou em hoje (${fmt(hoje)}) como prioritária.`, 'ok');
+    renderRetrabalho();
+    return;
+  }
   const payload = { status:'pendente', atualizado_por: usuarioAtual.ident, atualizado_em: new Date().toISOString() };
   const { error } = await supa.from('pp_itens').update(payload).eq('id', id);
   if(error){ toast('Erro: ' + error.message, 'err'); return; }
