@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Programa de Inspeção V1.24</title>
+<title>Programa de Inspeção V1.25</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -192,6 +192,44 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
   .pc-dica{font-size:11.5px;color:var(--muted);text-align:center;margin:-2px 0 2px}
   .pc-aguarda{font-size:12.5px;color:var(--muted);text-align:center;padding:6px 0}
 }
+
+/* V1.25: modo celular forçado (botão no Plano de Inspeção) — mesmas regras do celular, em coluna centralizada */
+body.forca-celular #page-acompanhamento .tbl-wrap{display:none}
+body.forca-celular #page-acompanhamento .cards{display:flex;flex-direction:column;gap:10px}
+body.forca-celular #page-acompanhamento .page-head p, body.forca-celular #page-acompanhamento .legenda{display:none}
+body.forca-celular #page-acompanhamento .page-head{margin-bottom:6px}
+body.forca-celular #page-acompanhamento .card{padding:8px 0;background:none;border:0;box-shadow:none}
+body.forca-celular #page-acompanhamento .filters{gap:6px;margin-bottom:8px}
+body.forca-celular #page-acompanhamento .filters label{display:none}
+body.forca-celular .pc{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:10px;padding:10px 12px}
+body.forca-celular .pc.linha-atrasado{border-left-color:var(--danger);background:#FDEDED}
+body.forca-celular .pc.linha-alerta{border-left-color:var(--warn);background:#FFF6E8}
+body.forca-celular .pc.linha-prioridade{border-left-color:var(--accent)}
+body.forca-celular .pc-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+body.forca-celular .pc-cod{font-family:var(--mono);font-weight:700;font-size:17px}
+body.forca-celular .pc-hora{font-family:var(--mono);font-size:13px;font-weight:600;white-space:nowrap}
+body.forca-celular .pc-desc{font-size:13.5px;margin:2px 0 6px;line-height:1.3}
+body.forca-celular .pc-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+body.forca-celular .pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+body.forca-celular .pc-nums div{background:rgba(0,0,0,.04);border-radius:8px;padding:5px 6px;text-align:center}
+body.forca-celular .pc-nums small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+body.forca-celular .pc-nums b{font-family:var(--mono);font-size:17px}
+body.forca-celular .pc-obs{font-size:12px;color:var(--muted);white-space:pre-line;margin-bottom:8px;max-height:3.6em;overflow:hidden}
+body.forca-celular .pc-btns{display:flex;gap:6px}
+body.forca-celular .pc-btns .btn{flex:1 1 0;min-width:0;min-height:46px;font-size:14px;padding:0 4px;justify-content:center;text-align:center}
+body.forca-celular .pc-wrap{position:relative;border-radius:10px;overflow:hidden}
+body.forca-celular .pc-fundo{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-weight:700;font-size:15px;color:#fff;border-radius:10px;background:var(--muted)}
+body.forca-celular .pc-fundo.ok{background:var(--ok)}.pc-fundo.warn{background:var(--warn)}
+body.forca-celular .pc-fundo span{opacity:0;transition:opacity .1s}
+body.forca-celular .pc-wrap .pc{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;will-change:transform}
+body.forca-celular .pc-wrap .pc.volta{transition:transform .2s ease}
+body.forca-celular .pc-dica{font-size:11.5px;color:var(--muted);text-align:center;margin:-2px 0 2px}
+body.forca-celular .pc-aguarda{font-size:12.5px;color:var(--muted);text-align:center;padding:6px 0}
+body.forca-celular .totais .tot{padding:6px 8px!important}
+body.forca-celular .totais .tot small{font-size:9px!important;letter-spacing:.02em!important}
+body.forca-celular .totais .tot b{font-size:17px!important}
+body.forca-celular #page-acompanhamento .page-head,body.forca-celular #page-acompanhamento .card{max-width:520px;margin-left:auto;margin-right:auto}
+body.forca-celular #page-acompanhamento .card{padding:8px 0}
 </style>
 </head>
 <body>
@@ -204,13 +242,13 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
     <button class="btn" id="auth-entrar" style="width:100%;justify-content:center">Entrar</button>
     <p id="auth-status" class="muted" style="margin-top:12px;font-size:12.5px;min-height:16px"></p>
     <p class="muted" style="margin-top:8px;font-size:11.5px">Use o mesmo e-mail e senha cadastrados no Firewall. Este app usa o mesmo projeto Supabase, apenas para login.</p>
-    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.24</p>
+    <p class="muted" id="auth-versao" style="margin-top:14px;font-size:11px;text-align:center;font-family:var(--mono)">Programa de Inspeção V1.25</p>
   </div>
 </div>
 
 <div id="app">
   <aside>
-    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.24 · FIREWALL · GP12</small></div>
+    <div class="brand"><h1>PROGRAMA DE INSPEÇÃO</h1><small>V1.25 · FIREWALL · GP12</small></div>
     <div class="hazard"></div>
     <nav id="nav-list"></nav>
     <div class="db-status" id="db-status">Supabase: —</div>
@@ -265,7 +303,7 @@ tr.imp-erro td{background:#FDEDED}tr.imp-dup td{color:var(--muted);background:#F
           <h2>Plano de Inspeção</h2>
           <p>Fila organizada por prioridade e horário. Marque o andamento conforme a peça é inspecionada.</p>
         </div>
-        <button class="btn sec" id="ac-atualizar">↻ Atualizar</button>
+        <div style="display:flex;gap:8px"><button class="btn sec" id="ac-modo" title="Mostra o plano em cartões, como no celular">📱 Modo celular</button><button class="btn sec" id="ac-atualizar">↻ Atualizar</button></div>
       </div>
       <div class="card">
         <div class="filters" id="ac-filtro"><label style="margin:0">Dia</label><input type="date" class="flt-data" style="width:auto"><button class="btn sm sec flt-hoje">Hoje</button><button class="btn sm sec flt-todos">Todos os dias</button></div>
@@ -1354,6 +1392,17 @@ async function mudarStatus(id, novoStatus, motivo){
   renderAcompanhamento();
 }
 $('ac-atualizar').addEventListener('click', renderAcompanhamento);
+/* Modo celular forçado: preferência só deste navegador (localStorage pode falhar → tudo em try/catch) */
+(function(){
+  const lerModo = () => { try{ return localStorage.getItem('pp_modo_celular') === '1'; }catch(_){ return false; } };
+  const aplicar = on => { document.body.classList.toggle('forca-celular', on); $('ac-modo').textContent = on ? '🖥 Modo normal' : '📱 Modo celular'; };
+  aplicar(lerModo());
+  $('ac-modo').addEventListener('click', () => {
+    const on = !document.body.classList.contains('forca-celular');
+    try{ localStorage.setItem('pp_modo_celular', on ? '1' : '0'); }catch(_){}
+    aplicar(on);
+  });
+})();
 
 /* ---------- RETRABALHO ---------- */
 async function renderRetrabalho(){
