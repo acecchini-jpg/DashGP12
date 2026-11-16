@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firewall Management V1.26</title>
+<title>Firewall Management V1.27</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -145,7 +145,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 <aside>
   <div class="brand">
     <h1>FIREWALL</h1>
-    <small>MANAGEMENT · V1.26</small>
+    <small>MANAGEMENT · V1.27</small>
   </div>
   <div class="hazard"></div>
   <nav>
@@ -217,7 +217,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
     </div>
     <div class="import-card">
       <h4>3 · Dados de Inspeção</h4>
-      <p>Lê a aba <b class="mono">Dados</b> (colunas A–L). Após a leitura, o sistema pergunta <b>de qual ano</b> importar e limita a importação a esse ano. AnoMês/Semana são recalculados a partir da Data e o <b>Turno é recalculado pelo cadastro de operadores</b>.</p>
+      <p>Lê a aba <b class="mono">Dados</b> (colunas A–L; o app recusa o arquivo se a aba ou os títulos não conferirem). Após a leitura, o sistema pergunta <b>de qual ano</b> importar e limita a importação a esse ano. AnoMês/Semana são recalculados a partir da Data e o <b>Turno é recalculado pelo cadastro de operadores</b>.</p>
       <input type="file" id="imp-dados-file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
       <button class="btn" onclick="document.getElementById('imp-dados-file').click()">Selecionar arquivo</button>
       <p class="muted mono" id="imp-progresso-dados" style="font-size:12px;margin-top:8px;display:none"></p>
@@ -452,7 +452,7 @@ th.sortable.sort-asc .arrow,th.sortable.sort-desc .arrow{opacity:1;color:var(--a
 
 <script>
 /* =====================================================================
-   FIREWALL MANAGEMENT V1.26 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
+   FIREWALL MANAGEMENT V1.27 — SPA totalmente Supabase (Cadastros + Inspeções), sem dependência de IndexedDB — SPA híbrido (Cadastros no Supabase, inspeções no IndexedDB via Dexie)
    Regras de negócio:
    - Registro atômico = linha da aba "Dados" (formato longo). Duplicatas
      legítimas: PK autoIncrement, ZERO desduplicação.
@@ -542,6 +542,7 @@ function parseDateSafe(v) {
   return { iso: `${y}-${p2(m)}-${p2(d)}`, ano: y, mes: m, dia: d, anoMes: `${y}${p2(m)}`, semana: isoWeek(y, m, d) };
 }
 
+const QTD_MAX_POR_LINHA = 100000;   // V1.27: o maior lançamento real do I-Chart 2026 é 4.800
 function normDefeito(nome) {
   const raw = String(nome ?? '').trim();
   return deParaMap.get(raw.toLowerCase()) || raw;
@@ -770,6 +771,19 @@ function lerPlanilha(file) {
     fr.readAsArrayBuffer(file);
   });
 }
+/* V1.27: importações travadas — a aba esperada TEM que existir (antes, sem ela, o app usava a 1ª aba e gravava lixo) */
+function abaObrigatoria(wb, nomes) {
+  const aba = acharAba(wb, nomes);
+  if (!aba) throw new Error(`Planilha incorreta: não existe a aba "${nomes[0]}". Abas encontradas: ${wb.SheetNames.join(', ')}.`);
+  return aba;
+}
+const normTitulo = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+function exigirTitulos(rows, esperados, abaNome) {   // esperados: [[indiceColuna, 'titulo normalizado'], ...]
+  const head = (rows[0] || []);
+  const erros = esperados.filter(([i, t]) => normTitulo(head[i]) !== t)
+    .map(([i, t]) => `coluna ${String.fromCharCode(65 + i)}: esperado "${t}", veio "${String(head[i] ?? '').trim() || '(vazio)'}"`);
+  if (erros.length) throw new Error(`Planilha incorreta: os títulos da aba "${abaNome}" não conferem (${erros.join('; ')}).`);
+}
 function acharAba(wb, nomes) {
   for (const n of nomes) { const hit = wb.SheetNames.find(s => s.trim().toLowerCase() === n.toLowerCase()); if (hit) return hit; }
   return null;
@@ -780,7 +794,7 @@ $('imp-oper-file').addEventListener('change', async e => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
   try {
     const wb = await lerPlanilha(file);
-    const aba = acharAba(wb, ['De_Para']) || wb.SheetNames[0];
+    const aba = abaObrigatoria(wb, ['De_Para']);
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
     if (!rows.length) throw new Error('Aba vazia');
     const head = rows[0].map(c => String(c ?? '').trim().toLowerCase());
@@ -846,8 +860,9 @@ $('imp-prod-file').addEventListener('change', async e => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
   try {
     const wb = await lerPlanilha(file);
-    const aba = acharAba(wb, ['Tabela N', 'TabelaN']) || wb.SheetNames[0];
+    const aba = abaObrigatoria(wb, ['Tabela N', 'TabelaN']);
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    exigirTitulos(rows, [[0, 'codigo'], [1, 'descricao'], [2, 'cliente'], [3, 'cod cliente']], aba);
     const candidatos = []; const vistos = new Set();
     for (let i = 1; i < rows.length; i++) {
       const cod = rows[i][0];
@@ -892,8 +907,9 @@ $('imp-dados-file').addEventListener('change', async e => {
   try {
     toast('Lendo arquivo… aguarde.', '');
     const wb = await lerPlanilha(file);
-    const aba = acharAba(wb, ['Dados']) || wb.SheetNames[0];
+    const aba = abaObrigatoria(wb, ['Dados']);
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    exigirTitulos(rows, [[0, 'codigo'], [1, 'cod_n'], [2, 'data'], [5, 'inspetor'], [6, 'defeito'], [7, 'quantidade'], [9, 'operador'], [10, 'cod operador']], aba);
     /* Pré-parse: colunas A–L (0..11); ignora linhas sem Código */
     const parsed = [];
     const anos = new Map();
@@ -918,9 +934,15 @@ $('imp-dados-file').addEventListener('change', async e => {
       anos.set(dt.ano, (anos.get(dt.ano) || 0) + 1);
     }
     if (!parsed.length) throw new Error('Nenhuma linha válida encontrada na aba ' + aba);
+    /* V1.27: conferência de sanidade — recusa planilha que não tem cara de inspeção */
+    if (!parsed.some(p => isInspecao(normDefeito(p.defeito)))) throw new Error('Planilha incorreta: nenhuma linha com defeito "Inspeção" (peças inspecionadas) na aba ' + aba + '.');
+    const absurda = parsed.find(p => p.quantidade > QTD_MAX_POR_LINHA);
+    if (absurda) throw new Error(`Planilha incorreta: quantidade absurda (${fmtInt(absurda.quantidade)}) no código ${absurda.codigo}, defeito "${absurda.defeito}". O limite por linha é ${fmtInt(QTD_MAX_POR_LINHA)}.`);
+    const inspPorAno = new Map();
+    parsed.forEach(p => { if (isInspecao(normDefeito(p.defeito))) inspPorAno.set(p.ano, (inspPorAno.get(p.ano) || 0) + p.quantidade); });
     /* Pergunta o ano */
     const anosOrd = [...anos.entries()].sort((a, b) => b[0] - a[0]);
-    const opts = anosOrd.map(([a, n]) => `<option value="${a}">${a} — ${fmtInt(n)} registro(s)</option>`).join('');
+    const opts = anosOrd.map(([a, n]) => `<option value="${a}">${a} — ${fmtInt(n)} registro(s) · ${fmtInt(inspPorAno.get(a) || 0)} peça(s) inspecionada(s)</option>`).join('');
     const semTurno = parsed.filter(p => p.turno === 'Sem Classificação').length;
     const semOperadores = operMap.size === 0;
     const aviso = semOperadores
